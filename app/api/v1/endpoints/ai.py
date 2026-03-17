@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from app.api import deps
@@ -16,6 +17,13 @@ class GenerateSectionRequest(BaseModel):
 
 class ScoreResumeRequest(BaseModel):
     resume_text: str
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
 
 @router.post("/improve-bullet")
 async def improve_bullet(
@@ -58,3 +66,30 @@ async def score_resume(
         return scoring_result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/chat/stream")
+async def stream_chat(
+    request: ChatRequest,
+    current_user: UserInDB = Depends(deps.get_current_user)
+):
+    """
+    Stream AI chat responses.
+    """
+    async def event_generator():
+        try:
+            # Convert pydantic models to dicts and map 'ai' to 'assistant'
+            messages = []
+            for m in request.messages:
+                role = "assistant" if m.role == "ai" else m.role
+                messages.append({"role": role, "content": m.content})
+            
+            async for chunk in AIService.stream_chat(messages):
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            yield f"Error: {str(e)}"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no"}
+    )

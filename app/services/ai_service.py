@@ -1,23 +1,36 @@
 import os
 import json
-from typing import Dict, Any, List, Optional
-from groq import Groq
-from openai import OpenAI
+import re
+from typing import Dict, Any, List, Optional, AsyncGenerator
+from groq import AsyncGroq
+from openai import AsyncOpenAI
 from app.core.config import settings
 
 class AIService:
+    _client: Optional[AsyncOpenAI] = None
+    _groq_client: Optional[AsyncGroq] = None
+
     @staticmethod
-    def get_client():
+    def get_client() -> Any:
         """
-        Returns the appropriate AI client based on settings.AI_CHOICE.
+        Returns the appropriate async AI client based on settings.AI_CHOICE.
+        Reuses client instances to avoid socket overhead.
         """
         if settings.AI_CHOICE == "openrouter":
-            return OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=settings.OPENROUTER_API_KEY,
-            )
+            if AIService._client is None:
+                AIService._client = AsyncOpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=settings.OPENROUTER_API_KEY,
+                    timeout=120.0,
+                )
+            return AIService._client
         else:
-            return Groq(api_key=settings.GROQ_API_KEY)
+            if AIService._groq_client is None:
+                AIService._groq_client = AsyncGroq(
+                    api_key=settings.GROQ_API_KEY,
+                    timeout=120.0,
+                )
+            return AIService._groq_client
 
     @staticmethod
     def get_model() -> str:
@@ -56,7 +69,6 @@ class AIService:
         client = AIService.get_client()
         model = AIService.get_model()
         
-        # OpenRouter/OpenAI and Groq share similar chat completion signatures
         kwargs: Dict[str, Any] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -68,10 +80,44 @@ class AIService:
         if settings.AI_CHOICE == "openrouter":
             kwargs["extra_body"] = {"reasoning": {"enabled": True}}
         
-        # Note: Groq and OpenAI SDKs are synchronous for these calls by default.
-        # We could use AsyncOpenAI/AsyncGroq for better performance in a high-concurrency app.
-        completion = client.chat.completions.create(**kwargs)
-        return completion.choices[0].message.content.strip()
+        try:
+            completion = await client.chat.completions.create(**kwargs)
+            return completion.choices[0].message.content.strip()
+        except Exception as e:
+            # If JSON mode is not supported, retry without it
+            if response_format and ("JSON mode" in str(e) or "INVALID_ARGUMENT" in str(e)):
+                kwargs.pop("response_format", None)
+                completion = await client.chat.completions.create(**kwargs)
+                return completion.choices[0].message.content.strip()
+            raise e
+
+    @staticmethod
+    async def stream_chat(messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        """
+        Streaming chat implementation.
+        """
+        client = AIService.get_client()
+        model = AIService.get_model()
+        
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+        }
+
+        if settings.AI_CHOICE == "openrouter":
+            kwargs["extra_body"] = {"reasoning": {"enabled": True}}
+        
+        try:
+            stream = await client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if len(chunk.choices) > 0:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        yield content
+        except Exception as e:
+            print(f"DEBUG: stream_chat failed: {str(e)}")
+            yield f"Error: {str(e)}"
 
     @staticmethod
     async def improve_bullet(bullet: str) -> str:
@@ -127,4 +173,22 @@ class AIService:
         """
         
         content = await AIService._get_completion(prompt, response_format={"type": "json_object"})
-        return json.loads(content)
+        
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # Fallback: try to extract JSON from markdown if the model ignored response_format
+            match = re.search(r"\{.*\}", content, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except:
+                    pass
+            
+            # Last resort: return a meaningful error structure
+            return {
+                "score": 0,
+                "impact_feedback": "Analysis failed due to response format issues.",
+                "ats_feedback": "Analysis failed due to response format issues.",
+                "improvement_suggestions": ["Please try again in a few moments."]
+            }
