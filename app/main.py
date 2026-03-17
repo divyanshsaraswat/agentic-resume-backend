@@ -1,6 +1,15 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:     %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.mongodb import connect_to_mongo, close_mongo_connection

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openrouter/free"
     
     # MongoDB
-    MONGODB_URL: str = "mongodb://localhost:27017" # Default for local dev
+    MONGO_URI: str = "mongodb://localhost:27017" # Default for local dev
     DATABASE_NAME: str = "placement_erp"
 
 settings = Settings()
