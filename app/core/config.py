@@ -1,0 +1,40 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+        case_sensitive=True
+    )
+    
+    PROJECT_NAME: str = "Placement ERP API"
+    API_V1_STR: str = "/api/v1"
+    
+    # CORS
+    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    
+    # Security
+    SECRET_KEY: str = "your-super-secret-key-for-dev" # Should be changed in production
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+    
+    # Google Auth
+    GOOGLE_CLIENT_ID: str = "" # To be provided by user or set in .env
+    
+    # AI Choice (groq or openrouter)
+    AI_CHOICE: str = "groq"
+    
+    # Groq AI
+    GROQ_API_KEY: str = "" # Set in .env
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    # OpenRouter AI
+    OPENROUTER_API_KEY: str = "" # Set in .env
+    OPENROUTER_MODEL: str = "openrouter/free"
+    
+    # MongoDB
+    MONGODB_URL: str = "mongodb://localhost:27017" # Default for local dev
+    DATABASE_NAME: str = "placement_erp"
+
+settings = Settings()
