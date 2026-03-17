@@ -3,7 +3,7 @@ from bson import ObjectId
 from datetime import datetime, timezone
 from app.db.mongodb import get_database
 from app.models.resume import ResumeInDB, ResumeVersion, ResumeCreate, ResumeStatus
-from app.models.user import PyObjectId
+from app.models.user import PyObjectId, UserRole
 
 class ResumeService:
     @staticmethod
@@ -101,3 +101,164 @@ class ResumeService:
             ]
         )
         return result.modified_count > 0
+    @staticmethod
+    async def get_validation_queue(
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+        department: Optional[str] = None,
+        department_group: Optional[str] = None,
+        limit: int = 10
+    ) -> List[dict]:
+        db = get_database()
+        
+        pipeline = [
+            # 1. Look up user info
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "user_id",
+                    "foreignField": "_id",
+                    "as": "student"
+                }
+            },
+            {"$unwind": "$student"},
+            # 2. Add latest version info for easier filtering
+            {
+                "$addFields": {
+                    "latest_version": {"$arrayElemAt": ["$versions", -1]}
+                }
+            },
+            # 3. Filter for submitted resumes
+            {
+                "$match": {
+                    "latest_version.status": ResumeStatus.SUBMITTED
+                }
+            }
+        ]
+
+        # Apply search
+        if search:
+            pipeline.append({
+                "$match": {
+                    "$or": [
+                        {"student.name": {"$regex": search, "$options": "i"}},
+                        {"student.email": {"$regex": search, "$options": "i"}},
+                        {"student.department": {"$regex": search, "$options": "i"}}
+                    ]
+                }
+            })
+
+        # Apply year filter
+        if year:
+            pipeline.append({
+                "$match": {"student.year": year}
+            })
+
+        # Apply specific department filter
+        if department:
+            pipeline.append({
+                "$match": {"student.department": {"$regex": f"^{department}$", "$options": "i"}}
+            })
+
+        # Apply department group filter (Engineering)
+        if department_group == "engineering":
+            engg_depts = ["CSE", "ECE", "EE", "ME", "CE", "CHE", "MME", "PIE", "Computer", "Electronics", "Electrical", "Mechanical", "Civil", "Chemical", "Metallurgical", "Production"]
+            engg_regex = "|".join(engg_depts)
+            pipeline.append({
+                "$match": {"student.department": {"$regex": engg_regex, "$options": "i"}}
+            })
+
+        # Sort by most recent submission
+        pipeline.append({"$sort": {"latest_version.updated_at": -1}})
+        
+        # Limit to top 10 as per request
+        pipeline.append({"$limit": limit})
+
+        # Project output format
+        pipeline.append({
+            "$project": {
+                "_id": 1,
+                "studentName": "$student.name",
+                "studentEmail": "$student.email",
+                "department": "$student.department",
+                "year": "$student.year",
+                "type": "$latest_version.type",
+                "score": "$latest_version.ai_score.total",
+                "status": "$latest_version.status",
+                "updatedAt": "$latest_version.updated_at"
+            }
+        })
+
+        results = await db.resumes.aggregate(pipeline).to_list(length=limit)
+        # Convert IDs to strings
+        for res in results:
+            res["id"] = str(res["_id"])
+            del res["_id"]
+        return results
+
+    @staticmethod
+    async def get_students_list(
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+        department: Optional[str] = None,
+        limit: int = 50
+    ) -> List[dict]:
+        db = get_database()
+        
+        # 1. Pipeline starts with students
+        match_query = {"role": UserRole.STUDENT}
+        if year:
+            match_query["year"] = year
+        if department:
+            match_query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+        if search:
+            match_query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"email": {"$regex": search, "$options": "i"}},
+                {"department": {"$regex": search, "$options": "i"}}
+            ]
+
+        pipeline = [
+            {"$match": match_query},
+            # 2. Lookup resumes
+            {
+                "$lookup": {
+                    "from": "resumes",
+                    "localField": "_id",
+                    "foreignField": "user_id",
+                    "as": "resumes"
+                }
+            },
+            # 3. Get the latest resume version
+            {
+                "$addFields": {
+                    "latest_resume": { "$arrayElemAt": ["$resumes", 0] }
+                }
+            },
+            {
+                "$addFields": {
+                    "latest_version": { "$arrayElemAt": ["$latest_resume.versions", -1] }
+                }
+            },
+            # 4. Limit and Project
+            {"$limit": limit},
+            {
+                "$project": {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "department": 1,
+                    "year": 1,
+                    "status": { "$ifNull": ["$latest_version.status", "not_created"] },
+                    "score": { "$ifNull": ["$latest_version.ai_score.overall", 0] },
+                    "updatedAt": { "$ifNull": ["$latest_version.updated_at", "$created_at"] }
+                }
+            }
+        ]
+
+        results = await db.users.aggregate(pipeline).to_list(length=limit)
+        
+        for res in results:
+            res["id"] = str(res["_id"])
+            del res["_id"]
+        return results

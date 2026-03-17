@@ -62,16 +62,43 @@ class AIService:
         return "".join(replacements.get(c, c) for c in text)
 
     @staticmethod
-    async def _get_completion(prompt: str, response_format: Optional[Dict] = None) -> str:
+    def _get_system_prompt(prompt_type: str = "chat") -> str:
+        """Reads the system prompt from backend/system_prompt_{type}.md."""
+        try:
+            # Look for system_prompt_{type}.md in the backend root
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            filename = f"system_prompt_{prompt_type}.md"
+            prompt_path = os.path.join(base_dir, filename)
+            
+            if os.path.exists(prompt_path):
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        return content
+        except Exception as e:
+            print(f"DEBUG: Error reading {filename}: {str(e)}")
+        
+        # Default fallback prompts
+        if prompt_type == "score":
+            return "You are an expert Institutional Career Services Assistant. Score the resume from 0-100 and provide feedback."
+        return "You are an expert Institutional Career Services Assistant. Help the student refine their LaTeX resume."
+
+    @staticmethod
+    async def _get_completion(prompt: str, response_format: Optional[Dict] = None, system_prompt: Optional[str] = None) -> str:
         """
         Internal method to get completion from the chosen provider.
         """
         client = AIService.get_client()
         model = AIService.get_model()
         
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
         kwargs: Dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
         }
         
         if response_format:
@@ -94,14 +121,21 @@ class AIService:
     @staticmethod
     async def stream_chat(messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
-        Streaming chat implementation.
+        Streaming chat implementation using the institutional chat system prompt.
         """
         client = AIService.get_client()
         model = AIService.get_model()
         
+        system_prompt = AIService._get_system_prompt("chat")
+        
+        # Prepend system prompt if not already present
+        full_messages = messages
+        if not any(m.get("role") == "system" for m in messages):
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
+        
         kwargs: Dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": full_messages,
             "stream": True,
         }
 
@@ -153,26 +187,23 @@ class AIService:
 
     @staticmethod
     async def score_resume(resume_text: str) -> Dict[str, Any]:
-        prompt = f"""
-        Analyze the following resume text and provide a score out of 100 based on:
-        1. Impact of bullet points.
-        2. ATS readability.
-        3. Technical skill presentation.
-        4. Overall professional tone.
+        """Analyzes and scores a resume using the dynamic scoring system prompt."""
+        system_prompt = AIService._get_system_prompt("score")
         
-        Resume Text:
+        prompt = f"""
+        Please evaluate the following resume based on the institutional rules provided in your system instructions.
+        
+        RESUME TEXT:
         {resume_text}
         
-        Return the result in JSON format with these exact keys:
-        - score: int
-        - impact_feedback: str
-        - ats_feedback: str
-        - improvement_suggestions: list of str
-        
-        Return ONLY valid JSON.
+        Ensure the response is a valid JSON object matching the requested structure.
         """
         
-        content = await AIService._get_completion(prompt, response_format={"type": "json_object"})
+        content = await AIService._get_completion(
+            prompt, 
+            response_format={"type": "json_object"},
+            system_prompt=system_prompt
+        )
         
         try:
             return json.loads(content)

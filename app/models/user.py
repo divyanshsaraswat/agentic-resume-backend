@@ -47,7 +47,9 @@ class UserBase(BaseModel):
     email: EmailStr
     role: UserRole = UserRole.STUDENT
     is_superadmin: bool = False
+    is_active: bool = True
     department: Optional[str] = None
+    year: Optional[int] = None
 
 class UserCreate(UserBase):
     pass
@@ -56,7 +58,9 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[UserRole] = None
     is_superadmin: Optional[bool] = None
+    is_active: Optional[bool] = None
     department: Optional[str] = None
+    year: Optional[int] = None
     assigned_students: Optional[List[PyObjectId]] = None
 
 class UserInDB(UserBase):

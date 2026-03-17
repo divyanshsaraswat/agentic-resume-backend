@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api import deps
 from app.models.resume import ResumeInDB, ResumeCreate, ResumeVersion, ResumeStatus
@@ -26,6 +26,24 @@ async def read_resumes(
     Retrieve resumes for the current user.
     """
     return await ResumeService.get_student_resumes(user_id=current_user.id)
+
+@router.get("/validation-queue", response_model=List[dict])
+async def get_validation_queue(
+    search: Optional[str] = None,
+    year: Optional[int] = None,
+    department: Optional[str] = None,
+    group: Optional[str] = None,
+    current_user: UserInDB = Depends(deps.check_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.SPC]))
+) -> Any:
+    """
+    Get the validation queue (Faculty/Admin/SPC only).
+    """
+    return await ResumeService.get_validation_queue(
+        search=search,
+        year=year,
+        department=department,
+        department_group=group
+    )
 
 @router.get("/{resume_id}", response_model=ResumeInDB)
 async def read_resume(
