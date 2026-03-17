@@ -1,13 +1,28 @@
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
-from datetime import datetime
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, GetCoreSchemaHandler, GetJsonSchemaHandler
+from pydantic_core import core_schema
+from typing import Optional, List, Any
+from datetime import datetime, timezone
 from enum import Enum
 from bson import ObjectId
 
 class PyObjectId(ObjectId):
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        return core_schema.json_or_python_schema(
+            json_schema=core_schema.str_schema(),
+            python_schema=core_schema.union_schema([
+                core_schema.is_instance_schema(ObjectId),
+                core_schema.chain_schema([
+                    core_schema.str_schema(),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]),
+            ]),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: str(x), when_used="json"
+            ),
+        )
 
     @classmethod
     def validate(cls, v):
@@ -16,8 +31,10 @@ class PyObjectId(ObjectId):
         return ObjectId(v)
 
     @classmethod
-    def __get_pydantic_json_schema__(cls, field_schema):
-        field_schema.update(type="string")
+    def __get_pydantic_json_schema__(
+        cls, core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> Any:
+        return handler(core_schema.str_schema())
 
 class UserRole(str, Enum):
     ADMIN = "admin"
@@ -45,10 +62,10 @@ class UserUpdate(BaseModel):
 class UserInDB(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
     assigned_students: List[PyObjectId] = []
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )

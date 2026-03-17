@@ -12,7 +12,7 @@ class LatexCompileRequest(BaseModel):
 
 class LatexCompileResponse(BaseModel):
     success: bool
-    job_id: str
+    job_id: Optional[str] = None
     error: Optional[str] = None
     log: Optional[str] = None
     pdf_available: bool

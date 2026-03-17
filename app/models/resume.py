@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from bson import ObjectId
 from app.models.user import PyObjectId
@@ -20,22 +20,20 @@ class ResumeVersion(BaseModel):
     ai_score: dict = {}
     status: ResumeStatus = ResumeStatus.DRAFT
     submitted_at: Optional[datetime] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class ResumeBase(BaseModel):
-    user_id: PyObjectId
-
-class ResumeCreate(ResumeBase):
+class ResumeCreate(BaseModel):
     initial_latex: str
     type: str
 
-class ResumeInDB(ResumeBase):
+class ResumeInDB(BaseModel):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    user_id: PyObjectId
     versions: List[ResumeVersion] = []
     default_version_id: Optional[PyObjectId] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )

@@ -7,7 +7,7 @@ from app.services.resume_service import ResumeService
 
 router = APIRouter()
 
-@router.post("/", response_model=ResumeInDB)
+@router.post("", response_model=ResumeInDB)
 async def create_resume(
     *,
     resume_in: ResumeCreate,
@@ -18,7 +18,7 @@ async def create_resume(
     """
     return await ResumeService.create_resume(user_id=current_user.id, resume_in=resume_in)
 
-@router.get("/", response_model=List[ResumeInDB])
+@router.get("", response_model=List[ResumeInDB])
 async def read_resumes(
     current_user: UserInDB = Depends(deps.get_current_user)
 ) -> Any:
@@ -82,3 +82,28 @@ async def update_status(
     if not success:
         raise HTTPException(status_code=404, detail="Resume version not found")
     return success
+
+@router.patch("/{resume_id}", response_model=bool)
+async def update_resume(
+    resume_id: str,
+    content_in: dict,
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Update the latest version of a resume.
+    """
+    resume = await ResumeService.get_resume_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    if resume.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the owner can update the resume"
+        )
+    
+    content = content_in.get("content")
+    if not content:
+        raise HTTPException(status_code=400, detail="Missing content")
+        
+    return await ResumeService.update_latest_version(resume_id, content)

@@ -1,6 +1,6 @@
 from typing import List, Optional
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 from app.db.mongodb import get_database
 from app.models.resume import ResumeInDB, ResumeVersion, ResumeCreate, ResumeStatus
 from app.models.user import PyObjectId
@@ -13,14 +13,14 @@ class ResumeService:
             type=resume_in.type,
             latex_code=resume_in.initial_latex,
             status=ResumeStatus.DRAFT,
-            updated_at=datetime.utcnow()
+            updated_at=datetime.now(timezone.utc)
         )
         
         resume_dict = ResumeInDB(
             user_id=user_id,
             versions=[initial_version],
             default_version_id=initial_version.version_id,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         ).model_dump(by_alias=True)
         
         result = await db.resumes.insert_one(resume_dict)
@@ -46,7 +46,7 @@ class ResumeService:
         db = get_database()
         await db.resumes.update_one(
             {"_id": ObjectId(resume_id)},
-            {"$push": {"versions": version_data.model_dump()}}
+            {"$push": {"versions": version_data.model_dump(by_alias=True)}}
         )
         return await ResumeService.get_resume_by_id(resume_id)
 
@@ -65,8 +65,39 @@ class ResumeService:
             {
                 "$set": {
                     "versions.$.status": status,
-                    "versions.$.updated_at": datetime.utcnow()
+                    "versions.$.updated_at": datetime.now(timezone.utc)
                 }
             }
+        )
+        return result.modified_count > 0
+
+    @staticmethod
+    async def update_latest_version(resume_id: str, content: str) -> bool:
+        db = get_database()
+        # Find the resume and update the last version in the array
+        result = await db.resumes.update_one(
+            {"_id": ObjectId(resume_id)},
+            [
+                {
+                    "$set": {
+                        "versions": {
+                            "$concatArrays": [
+                                {"$slice": ["$versions", {"$subtract": [{"$size": "$versions"}, 1]}]},
+                                [
+                                    {
+                                        "$mergeObjects": [
+                                            {"$arrayElemAt": ["$versions", -1]},
+                                            {
+                                                "latex_code": content,
+                                                "updated_at": datetime.now(timezone.utc)
+                                            }
+                                        ]
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                }
+            ]
         )
         return result.modified_count > 0

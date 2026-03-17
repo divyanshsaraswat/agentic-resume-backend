@@ -6,6 +6,29 @@ from typing import Dict, Any
 
 class LatexService:
     @staticmethod
+    def _get_pdflatex_path() -> str:
+        """
+        Returns the path to pdflatex. On Windows, checks common MiKTeX installation 
+        paths if it's not in the system PATH.
+        """
+        # 1. Try system PATH
+        if shutil.which("pdflatex"):
+            return "pdflatex"
+            
+        # 2. Try common Windows MiKTeX paths
+        if os.name == "nt":
+            user_home = os.path.expanduser("~")
+            paths = [
+                os.path.join(user_home, "AppData", "Local", "Programs", "MiKTeX", "miktex", "bin", "x64", "pdflatex.exe"),
+                os.path.join("C:\\", "Program Files", "MiKTeX", "miktex", "bin", "x64", "pdflatex.exe"),
+            ]
+            for path in paths:
+                if os.path.exists(path):
+                    return path
+                    
+        return "pdflatex" # Fallback to default, which might fail if not in PATH
+
+    @staticmethod
     async def compile_latex(latex_code: str) -> Dict[str, Any]:
         """
         Compiles LaTeX code to PDF.
@@ -21,6 +44,8 @@ class LatexService:
         with open(tex_file, "w", encoding="utf-8") as f:
             f.write(latex_code)
             
+        pdflatex_cmd = LatexService._get_pdflatex_path()
+        
         try:
             # Run pdflatex
             # Flags:
@@ -30,7 +55,7 @@ class LatexService:
             # -output-directory: Where to put files
             result = subprocess.run(
                 [
-                    "pdflatex",
+                    pdflatex_cmd,
                     "-interaction=nonstopmode",
                     "-halt-on-error",
                     "-no-shell-escape",
@@ -65,6 +90,7 @@ class LatexService:
         except subprocess.TimeoutExpired:
             return {
                 "success": False,
+                "job_id": job_id,
                 "error": "Compilation timed out",
                 "log": "",
                 "pdf_available": False
@@ -72,6 +98,7 @@ class LatexService:
         except Exception as e:
             return {
                 "success": False,
+                "job_id": job_id,
                 "error": str(e),
                 "log": "",
                 "pdf_available": False

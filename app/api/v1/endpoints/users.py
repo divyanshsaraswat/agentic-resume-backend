@@ -8,7 +8,7 @@ from datetime import datetime
 
 router = APIRouter()
 
-@router.get("/", response_model=List[UserInDB])
+@router.get("", response_model=List[UserInDB])
 async def read_users(
     skip: int = 0,
     limit: int = 100,
