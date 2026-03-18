@@ -120,8 +120,8 @@ async def update_resume(
             detail="Only the owner can update the resume"
         )
     
-    content = content_in.get("content")
-    if not content:
-        raise HTTPException(status_code=400, detail="Missing content")
+    updates = content_in.copy()
+    if "content" in updates:
+        updates["latex_code"] = updates.pop("content")
         
-    return await ResumeService.update_latest_version(resume_id, content)
+    return await ResumeService.update_latest_version(resume_id, updates)

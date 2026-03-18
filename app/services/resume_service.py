@@ -72,7 +72,7 @@ class ResumeService:
         return result.modified_count > 0
 
     @staticmethod
-    async def update_latest_version(resume_id: str, content: str) -> bool:
+    async def update_latest_version(resume_id: str, updates: dict) -> bool:
         db = get_database()
         # Find the resume and update the last version in the array
         result = await db.resumes.update_one(
@@ -88,7 +88,7 @@ class ResumeService:
                                         "$mergeObjects": [
                                             {"$arrayElemAt": ["$versions", -1]},
                                             {
-                                                "latex_code": content,
+                                                **updates,
                                                 "updated_at": datetime.now(timezone.utc)
                                             }
                                         ]
