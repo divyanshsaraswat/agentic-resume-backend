@@ -23,7 +23,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 async def lifespan(app: FastAPI):
     # Setup LaTeX if needed (non-blocking)
     try:
-        from scripts.setup_latex import install_latex
+        from app.core.latex_setup import install_latex
         install_latex()
     except Exception as e:
         logger.error(f"Failed to run LaTeX setup: {e}")
