@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.api import deps
 from app.models.user import UserInDB
 from app.services.ai_service import AIService
@@ -26,6 +26,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    resume_content: Optional[str] = None
 
 @router.post("/improve-bullet")
 async def improve_bullet(
@@ -119,7 +120,7 @@ async def stream_chat(
                 target="AI Assistant",
                 metadata={"message_count": len(request.messages)}
             )
-            async for chunk in AIService.stream_chat(messages):
+            async for chunk in AIService.stream_chat(messages, request.resume_content):
                 yield f"data: {chunk}\n\n"
         except Exception as e:
             yield f"Error: {str(e)}"
