@@ -1,9 +1,12 @@
+import logging
 import subprocess
 import os
 import uuid
 import shutil
 from typing import Dict, Any
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class LatexService:
     @staticmethod
@@ -13,8 +16,10 @@ class LatexService:
         paths if it's not in the system PATH.
         """
         # 1. Try system PATH
-        if shutil.which("pdflatex"):
-            return "pdflatex"
+        system_path = shutil.which("pdflatex")
+        if system_path:
+            logger.info(f"Using pdflatex from system PATH: {system_path}")
+            return system_path
             
         # 2. Try common Windows MiKTeX paths
         if os.name == "nt":
@@ -25,8 +30,10 @@ class LatexService:
             ]
             for path in paths:
                 if os.path.exists(path):
+                    logger.info(f"Using pdflatex from MiKTeX path: {path}")
                     return path
-                    
+        
+        logger.warning("pdflatex not found in PATH or standard locations. Falling back to 'pdflatex' command.")
         return "pdflatex" # Fallback to default, which might fail if not in PATH
 
     @staticmethod
@@ -40,37 +47,46 @@ class LatexService:
         work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
         os.makedirs(work_dir, exist_ok=True)
         
+        logger.info(f"Starting LaTeX compilation job {job_id} in {work_dir}")
+        logger.debug(f"LaTeX code length: {len(latex_code)} characters")
+        
         tex_file = os.path.join(work_dir, "resume.tex")
         pdf_file = os.path.join(work_dir, "resume.pdf")
         
-        with open(tex_file, "w", encoding="utf-8") as f:
-            f.write(latex_code)
-            
-        pdflatex_cmd = LatexService._get_pdflatex_path()
-        
         try:
-            # Run pdflatex
-            # Flags:
-            # -interaction=nonstopmode: Don't stop for errors
-            # -halt-on-error: Stop at first error (optional, but good for speed)
-            # -no-shell-escape: Security measure
-            # -output-directory: Where to put files
+            with open(tex_file, "w", encoding="utf-8") as f:
+                f.write(latex_code)
+            
+            pdflatex_cmd = LatexService._get_pdflatex_path()
+            
+            cmd = [
+                pdflatex_cmd,
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                "-no-shell-escape",
+                f"-output-directory={work_dir}",
+                tex_file
+            ]
+            
+            logger.info(f"Executing command: {' '.join(cmd)}")
+            
             result = subprocess.run(
-                [
-                    pdflatex_cmd,
-                    "-interaction=nonstopmode",
-                    "-halt-on-error",
-                    "-no-shell-escape",
-                    f"-output-directory={work_dir}",
-                    tex_file
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
-                timeout=30 # Safety timeout
+                timeout=45 # Increased safety timeout
             )
             
             success = result.returncode == 0
             log_content = result.stdout
+            err_content = result.stderr
+            
+            if not success:
+                logger.error(f"LaTeX compilation failed with return code {result.returncode}")
+                if err_content:
+                    logger.error(f"Stderr: {err_content}")
+            else:
+                logger.info(f"LaTeX compilation successful for job {job_id}")
             
             # Extract error summary if failed
             error_msg = ""
@@ -80,24 +96,32 @@ class LatexService:
                     if line.startswith("!"):
                         error_msg = line
                         break
+                if not error_msg and err_content:
+                    error_msg = err_content.split("\n")[0]
+            
+            pdf_exists = os.path.exists(pdf_file)
+            if success and not pdf_exists:
+                logger.error(f"pdflatex claimed success but {pdf_file} was not found")
             
             return {
                 "success": success,
                 "job_id": job_id,
-                "error": error_msg,
+                "error": error_msg or ("Unknown error" if not success else ""),
                 "log": log_content,
-                "pdf_available": os.path.exists(pdf_file)
+                "pdf_available": pdf_exists
             }
             
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"LaTeX compilation timed out: {e}")
             return {
                 "success": False,
                 "job_id": job_id,
                 "error": "Compilation timed out",
-                "log": "",
+                "log": e.stdout if hasattr(e, 'stdout') else "",
                 "pdf_available": False
             }
         except Exception as e:
+            logger.error(f"Unexpected error during LaTeX compilation: {e}", exc_info=True)
             return {
                 "success": False,
                 "job_id": job_id,
@@ -106,8 +130,7 @@ class LatexService:
                 "pdf_available": False
             }
         finally:
-            # We keep the directory for now so the PDF can be served/uploaded
-            # In a real app, we'd clean up after upload to S3/R2
+            # Cleanup logic could be added here if needed
             pass
 
     @staticmethod
