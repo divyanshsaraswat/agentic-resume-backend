@@ -72,6 +72,15 @@ async def read_users(
     users = await db.users.find(query).skip(skip).limit(limit).to_list(length=limit)
     return [UserInDB(**user) for user in users]
 
+@router.get("/stats", response_model=dict)
+async def get_admin_stats(
+    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN]))
+) -> Any:
+    """
+    Get statistics for the admin dashboard. (Admin only)
+    """
+    return await ResumeService.get_admin_dashboard_stats()
+
 @router.get("/students", response_model=List[dict])
 async def read_students(
     search: Optional[str] = None,

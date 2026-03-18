@@ -47,6 +47,15 @@ async def read_resumes(
     """
     return await ResumeService.get_student_resumes(user_id=current_user.id)
 
+@router.get("/stats", response_model=dict)
+async def get_student_stats(
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Get statistics for the student dashboard.
+    """
+    return await ResumeService.get_student_dashboard_stats(user_id=current_user.id)
+
 @router.get("/validation-queue", response_model=List[dict])
 async def get_validation_queue(
     search: Optional[str] = None,
