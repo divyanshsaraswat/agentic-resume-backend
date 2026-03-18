@@ -43,17 +43,17 @@ class LatexService:
         Returns a dictionary with success status, PDF path (ID), and logs.
         """
         job_id = str(uuid.uuid4())
-        # Use the configured upload directory so it's served via /public
-        work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
-        os.makedirs(work_dir, exist_ok=True)
-        
-        logger.info(f"Starting LaTeX compilation job {job_id} in {work_dir}")
-        logger.debug(f"LaTeX code length: {len(latex_code)} characters")
-        
-        tex_file = os.path.join(work_dir, "resume.tex")
-        pdf_file = os.path.join(work_dir, "resume.pdf")
-        
         try:
+            # Use the configured upload directory so it's served via /public
+            work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
+            os.makedirs(work_dir, exist_ok=True)
+            
+            logger.info(f"Starting LaTeX compilation job {job_id} in {work_dir}")
+            logger.debug(f"LaTeX code length: {len(latex_code)} characters")
+            
+            tex_file = os.path.join(work_dir, "resume.tex")
+            pdf_file = os.path.join(work_dir, "resume.pdf")
+            
             with open(tex_file, "w", encoding="utf-8") as f:
                 f.write(latex_code)
             
@@ -117,7 +117,17 @@ class LatexService:
                 "success": False,
                 "job_id": job_id,
                 "error": "Compilation timed out",
-                "log": e.stdout if hasattr(e, 'stdout') else "",
+                "log": (e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)) if e.stdout else "No output available from timed-out process",
+                "pdf_available": False
+            }
+        except FileNotFoundError:
+            msg = "LaTeX build engine (pdflatex) not found. Please install MiKTeX (Windows) or TeX Live (Linux/macOS)."
+            logger.error(msg)
+            return {
+                "success": False,
+                "job_id": job_id,
+                "error": msg,
+                "log": "Fatal Error: 'pdflatex' executable was not found in the system path or common locations.",
                 "pdf_available": False
             }
         except Exception as e:
