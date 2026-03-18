@@ -11,11 +11,17 @@ class ResumeStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
 
+class ResumeFormat(str, Enum):
+    LATEX = "latex"
+    PDF = "pdf"
+    DOCX = "docx"
+
 class ResumeVersion(BaseModel):
     version_id: PyObjectId = Field(default_factory=PyObjectId)
     type: str # e.g., "SDE", "Core"
+    format: ResumeFormat = ResumeFormat.LATEX
     file_url: Optional[str] = None
-    latex_code: str
+    latex_code: str = ""
     parsed_data: dict = {}
     ai_score: dict = {}
     status: ResumeStatus = ResumeStatus.DRAFT
@@ -23,8 +29,10 @@ class ResumeVersion(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ResumeCreate(BaseModel):
-    initial_latex: str
+    initial_latex: Optional[str] = ""
+    file_url: Optional[str] = None
     type: str
+    format: ResumeFormat = ResumeFormat.LATEX
 
 class ResumeInDB(BaseModel):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")

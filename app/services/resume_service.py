@@ -11,7 +11,9 @@ class ResumeService:
         db = get_database()
         initial_version = ResumeVersion(
             type=resume_in.type,
-            latex_code=resume_in.initial_latex,
+            format=resume_in.format,
+            file_url=resume_in.file_url,
+            latex_code=resume_in.initial_latex or "",
             status=ResumeStatus.DRAFT,
             updated_at=datetime.now(timezone.utc)
         )
@@ -104,8 +106,8 @@ class ResumeService:
     @staticmethod
     async def get_validation_queue(
         search: Optional[str] = None,
-        year: Optional[int] = None,
-        department: Optional[str] = None,
+        years: Optional[List[int]] = None,
+        departments: Optional[List[str]] = None,
         department_group: Optional[str] = None,
         limit: int = 10
     ) -> List[dict]:
@@ -148,16 +150,16 @@ class ResumeService:
                 }
             })
 
-        # Apply year filter
-        if year:
+        # Apply year filter (Multi-select)
+        if years:
             pipeline.append({
-                "$match": {"student.year": year}
+                "$match": {"student.year": {"$in": years}}
             })
 
-        # Apply specific department filter
-        if department:
+        # Apply specific department filter (Multi-select)
+        if departments:
             pipeline.append({
-                "$match": {"student.department": {"$regex": f"^{department}$", "$options": "i"}}
+                "$match": {"student.department": {"$in": departments}}
             })
 
         # Apply department group filter (Engineering)
@@ -199,18 +201,18 @@ class ResumeService:
     @staticmethod
     async def get_students_list(
         search: Optional[str] = None,
-        year: Optional[int] = None,
-        department: Optional[str] = None,
+        years: Optional[List[int]] = None,
+        departments: Optional[List[str]] = None,
         limit: int = 50
     ) -> List[dict]:
         db = get_database()
         
         # 1. Pipeline starts with students
         match_query = {"role": UserRole.STUDENT}
-        if year:
-            match_query["year"] = year
-        if department:
-            match_query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+        if years:
+            match_query["year"] = {"$in": years}
+        if departments:
+            match_query["department"] = {"$in": departments}
         if search:
             match_query["$or"] = [
                 {"name": {"$regex": search, "$options": "i"}},
@@ -262,3 +264,8 @@ class ResumeService:
             res["id"] = str(res["_id"])
             del res["_id"]
         return results
+    @staticmethod
+    async def delete_resume(resume_id: str, user_id: PyObjectId) -> bool:
+        db = get_database()
+        result = await db.resumes.delete_one({"_id": ObjectId(resume_id), "user_id": user_id})
+        return result.deleted_count > 0

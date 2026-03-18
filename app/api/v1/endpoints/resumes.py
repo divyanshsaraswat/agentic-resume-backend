@@ -1,5 +1,5 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.api import deps
 from app.models.resume import ResumeInDB, ResumeCreate, ResumeVersion, ResumeStatus
 from app.models.user import UserInDB, UserRole
@@ -30,8 +30,8 @@ async def read_resumes(
 @router.get("/validation-queue", response_model=List[dict])
 async def get_validation_queue(
     search: Optional[str] = None,
-    year: Optional[int] = None,
-    department: Optional[str] = None,
+    year: Optional[List[int]] = Query(None),
+    department: Optional[List[str]] = Query(None),
     group: Optional[str] = None,
     current_user: UserInDB = Depends(deps.check_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.SPC]))
 ) -> Any:
@@ -40,8 +40,8 @@ async def get_validation_queue(
     """
     return await ResumeService.get_validation_queue(
         search=search,
-        year=year,
-        department=department,
+        years=year,
+        departments=department,
         department_group=group
     )
 
@@ -125,3 +125,29 @@ async def update_resume(
         updates["latex_code"] = updates.pop("content")
         
     return await ResumeService.update_latest_version(resume_id, updates)
+@router.delete("/{resume_id}", response_model=bool)
+async def delete_resume(
+    resume_id: str,
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Delete a resume.
+    """
+    success = await ResumeService.delete_resume(resume_id, current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
+    return success
+
+@router.post("/{resume_id}/submit", response_model=bool)
+async def submit_resume(
+    resume_id: str,
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Submit the latest version of a resume for review.
+    """
+    resume = await ResumeService.get_resume_by_id(resume_id)
+    if not resume or resume.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
+    
+    return await ResumeService.update_latest_version(resume_id, {"status": ResumeStatus.SUBMITTED})

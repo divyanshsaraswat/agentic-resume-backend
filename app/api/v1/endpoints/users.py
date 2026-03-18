@@ -1,5 +1,5 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.api import deps
 from app.db.mongodb import get_database
 from app.models.user import UserInDB, UserUpdate, UserRole, PyObjectId
@@ -29,8 +29,8 @@ async def read_users(
 @router.get("/students", response_model=List[dict])
 async def read_students(
     search: Optional[str] = None,
-    year: Optional[int] = None,
-    department: Optional[str] = None,
+    year: Optional[List[int]] = Query(None),
+    department: Optional[List[str]] = Query(None),
     current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC]))
 ) -> Any:
     """
@@ -38,8 +38,8 @@ async def read_students(
     """
     return await ResumeService.get_students_list(
         search=search,
-        year=year,
-        department=department
+        years=year,
+        departments=department
     )
 
 @router.get("/{user_id}", response_model=UserInDB)
