@@ -16,11 +16,21 @@ from app.db.mongodb import connect_to_mongo, close_mongo_connection
 from fastapi.staticfiles import StaticFiles
 import os
 
-# Ensure upload directory exists before any mounts
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure upload directory exists (with fallback for read-only systems)
+    try:
+        if not os.path.exists(settings.UPLOAD_DIR):
+            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+            logger.info(f"Initialized storage at: {settings.UPLOAD_DIR}")
+    except OSError as e:
+        import tempfile
+        fallback_dir = os.path.join(tempfile.gettempdir(), "resume_app")
+        os.makedirs(fallback_dir, exist_ok=True)
+        # Update settings at runtime so other services use the writable path
+        settings.UPLOAD_DIR = fallback_dir
+        logger.warning(f"Primary storage read-only. Using fallback: {fallback_dir}")
+
     # Setup LaTeX if needed (non-blocking)
     try:
         from app.core.latex_setup import install_latex
