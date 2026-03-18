@@ -177,7 +177,7 @@ Scores a resume and provides feedback.
 - LaTeX (for PDF generation)
 
 ### Installation
-1. `uv sync`
+1. `uv syn c`
 2. `uv run python scripts/setup_latex.py` (optional)
 3. Create `.env` based on the template below.
 
