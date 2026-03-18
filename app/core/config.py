@@ -37,4 +37,9 @@ class Settings(BaseSettings):
     MONGO_URI: str = "mongodb://localhost:27017" # Default for local dev
     DATABASE_NAME: str = "placement_erp"
 
+    # Storage Settings
+    # Path relative to the app's root (where main.py is run)
+    UPLOAD_DIR: str = "public"
+    MAX_STORAGE_MB_PER_USER: int = 20
+
 settings = Settings()

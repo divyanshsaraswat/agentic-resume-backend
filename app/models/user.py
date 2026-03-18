@@ -50,6 +50,8 @@ class UserBase(BaseModel):
     is_active: bool = True
     department: Optional[str] = None
     year: Optional[int] = None
+    storage_limit_mb: int = 20
+    storage_used_bytes: int = 0
 
 class UserCreate(UserBase):
     pass

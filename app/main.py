@@ -13,9 +13,21 @@ logger = logging.getLogger(__name__)
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.mongodb import connect_to_mongo, close_mongo_connection
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Ensure upload directory exists before any mounts
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Setup LaTeX if needed (non-blocking)
+    try:
+        from scripts.setup_latex import install_latex
+        install_latex()
+    except Exception as e:
+        logger.error(f"Failed to run LaTeX setup: {e}")
+        
     await connect_to_mongo()
     yield
     await close_mongo_connection()
@@ -38,6 +50,9 @@ if settings.BACKEND_CORS_ORIGINS:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Mount static files
+app.mount("/public", StaticFiles(directory=settings.UPLOAD_DIR), name="public")
 
 @app.get("/")
 async def root():

@@ -5,6 +5,8 @@ from typing import List, Dict, Any
 from app.api import deps
 from app.models.user import UserInDB
 from app.services.ai_service import AIService
+from app.services.audit_service import AuditService
+from app.models.audit_log import AuditActionType, AuditLogType
 
 router = APIRouter()
 
@@ -35,6 +37,14 @@ async def improve_bullet(
     """
     try:
         refined_text = await AIService.improve_bullet(request.bullet)
+        await AuditService.log_action(
+            actor_id=str(current_user.id),
+            actor_name=current_user.name,
+            actor_role=current_user.role.value,
+            action=AuditActionType.AI_IMPROVE_BULLET,
+            log_type=AuditLogType.AI,
+            target="Resume Bullet",
+        )
         return {"original": request.bullet, "improved": refined_text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -49,6 +59,14 @@ async def generate_section(
     """
     try:
         latex_code = await AIService.generate_section(request.section_name, request.user_context)
+        await AuditService.log_action(
+            actor_id=str(current_user.id),
+            actor_name=current_user.name,
+            actor_role=current_user.role.value,
+            action=AuditActionType.AI_GENERATE_SECTION,
+            log_type=AuditLogType.AI,
+            target=request.section_name,
+        )
         return {"section_name": request.section_name, "latex_code": latex_code}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -63,6 +81,15 @@ async def score_resume(
     """
     try:
         scoring_result = await AIService.score_resume(request.resume_text)
+        await AuditService.log_action(
+            actor_id=str(current_user.id),
+            actor_name=current_user.name,
+            actor_role=current_user.role.value,
+            action=AuditActionType.AI_SCORE_RESUME,
+            log_type=AuditLogType.AI,
+            target="Resume Content",
+            metadata={"score": scoring_result.get("score")}
+        )
         return scoring_result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,6 +110,15 @@ async def stream_chat(
                 role = "assistant" if m.role == "ai" else m.role
                 messages.append({"role": role, "content": m.content})
             
+            await AuditService.log_action(
+                actor_id=str(current_user.id),
+                actor_name=current_user.name,
+                actor_role=current_user.role.value,
+                action=AuditActionType.AI_CHAT,
+                log_type=AuditLogType.AI,
+                target="AI Assistant",
+                metadata={"message_count": len(request.messages)}
+            )
             async for chunk in AIService.stream_chat(messages):
                 yield f"data: {chunk}\n\n"
         except Exception as e:

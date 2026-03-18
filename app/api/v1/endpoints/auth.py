@@ -8,6 +8,8 @@ from app.core.config import settings
 from app.api import deps
 from app.db.mongodb import get_database
 from app.models.user import UserInDB, UserCreate, UserRole, UserBase
+from app.services.audit_service import AuditService
+from app.models.audit_log import AuditActionType, AuditLogType
 from datetime import datetime
 
 router = APIRouter()
@@ -32,6 +34,7 @@ async def login_google(token: str):
         db = get_database()
         user = await db.users.find_one({"email": email})
         
+        user_role = "student"
         if not user:
             # Create user if not exists
             new_user = UserInDB(
@@ -45,11 +48,22 @@ async def login_google(token: str):
             user_id = str(result.inserted_id)
         else:
             user_id = str(user["_id"])
+            user_role = user.get("role", "student")
 
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = security.create_access_token(
             user_id, expires_delta=access_token_expires
         )
+        
+        await AuditService.log_action(
+            actor_id=user_id,
+            actor_name=name or email,
+            actor_role=user_role,
+            action=AuditActionType.LOGIN_SUCCESS,
+            log_type=AuditLogType.AUTH,
+            target=email,
+        )
+        
         return {
             "access_token": access_token,
             "token_type": "bearer",

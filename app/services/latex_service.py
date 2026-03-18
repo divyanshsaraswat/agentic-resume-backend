@@ -3,6 +3,7 @@ import os
 import uuid
 import shutil
 from typing import Dict, Any
+from app.core.config import settings
 
 class LatexService:
     @staticmethod
@@ -35,7 +36,8 @@ class LatexService:
         Returns a dictionary with success status, PDF path (ID), and logs.
         """
         job_id = str(uuid.uuid4())
-        work_dir = os.path.join("/tmp", "latex", job_id)
+        # Use the configured upload directory so it's served via /public
+        work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
         os.makedirs(work_dir, exist_ok=True)
         
         tex_file = os.path.join(work_dir, "resume.tex")
@@ -110,6 +112,6 @@ class LatexService:
 
     @staticmethod
     def cleanup_job(job_id: str):
-        work_dir = os.path.join("/tmp", "latex", job_id)
+        work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
         if os.path.exists(work_dir):
             shutil.rmtree(work_dir)
