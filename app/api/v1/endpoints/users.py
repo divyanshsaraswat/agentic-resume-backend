@@ -151,6 +151,12 @@ async def update_user(
         )
     
     update_data = user_in.model_dump(exclude_unset=True)
+    
+    # Strictly prevent editing personal profile fields in sync with Google Auth
+    for forbidden in ["name", "email", "picture"]:
+        if forbidden in update_data:
+            del update_data[forbidden]
+
     if not current_user.is_superadmin and "role" in update_data:
         # Only superadmin can change roles
         del update_data["role"]
@@ -208,3 +214,18 @@ async def delete_user(
     )
     
     return None
+
+@router.get("/llm/models-info", response_model=dict)
+async def get_llm_models_info(
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Get available LLM models and their credit costs.
+    """
+    from app.core.config import settings
+    return {
+        "models": settings.MODEL_CREDIT_COSTS,
+        "default": settings.DEFAULT_MODEL,
+        "hourly_limit": settings.LLM_CREDITS_PER_HOUR
+    }
+

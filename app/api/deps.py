@@ -1,5 +1,5 @@
-from typing import Generator, List
-from fastapi import Depends, HTTPException, status
+from typing import Generator, List, Optional
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -10,12 +10,24 @@ from app.models.user import UserInDB, UserRole
 from bson import ObjectId
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+    tokenUrl=f"{settings.API_V1_STR}/auth/login",
+    auto_error=False  # Allow us to handle missing token via query_token
 )
 
 async def get_current_user(
-    token: str = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
+    query_token: Optional[str] = Query(None, alias="token")
 ) -> UserInDB:
+    if not token and query_token:
+        token = query_token
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]

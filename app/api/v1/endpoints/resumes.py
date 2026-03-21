@@ -1,4 +1,5 @@
 from typing import Any, List, Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Form
 from app.api import deps
 from app.models.resume import ResumeInDB, ResumeCreate, ResumeVersion, ResumeStatus
@@ -151,12 +152,21 @@ async def update_status(
     resume_id: str,
     version_id: str,
     status: ResumeStatus = Query(...),
+    remark: Optional[str] = Query(None),
     current_user: UserInDB = Depends(deps.check_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.SPC]))
 ) -> Any:
     """
     Update resume version status (Faculty/Admin/SPC only).
     """
-    success = await ResumeService.update_version_status(resume_id, version_id, status)
+    kwargs = {
+        "reviewer_name": current_user.name,
+        "reviewer_picture_url": current_user.picture,
+        "reviewed_at": datetime.now(timezone.utc)
+    }
+    if remark:
+        kwargs["reviewer_remark"] = remark
+
+    success = await ResumeService.update_version_status(resume_id, version_id, status, **kwargs)
     if not success:
         raise HTTPException(status_code=404, detail="Resume version not found")
     
@@ -269,4 +279,27 @@ async def submit_resume(
     if not resume or resume.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
     
-    return await ResumeService.update_latest_version(resume_id, {"status": ResumeStatus.SUBMITTED})
+    success = await ResumeService.update_latest_version(resume_id, {"status": ResumeStatus.SUBMITTED})
+    
+    if success:
+        # Create notifications for reviewers
+        try:
+            from app.db.mongodb import get_database
+            db = get_database()
+            # Find all users with Faculty or SPC role
+            reviewers = await db.users.find({
+                "role": {"$in": [UserRole.FACULTY, UserRole.SPC]}
+            }).to_list(length=100)
+            
+            for reviewer in reviewers:
+                await NotificationService.create_notification(
+                    user_id=str(reviewer["_id"]),
+                    title="New Submission",
+                    description=f"{current_user.name} has submitted a {resume.type} for review.",
+                    n_type=NotificationType.RESUME_SUBMITTED,
+                    metadata={"resume_id": resume_id}
+                )
+        except Exception as e:
+            print(f"Failed to notify reviewers: {e}")
+    
+    return success

@@ -25,6 +25,10 @@ class ResumeVersion(BaseModel):
     parsed_data: dict = {}
     ai_score: dict = {}
     status: ResumeStatus = ResumeStatus.DRAFT
+    reviewer_remark: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    reviewer_picture_url: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -34,10 +38,19 @@ class ResumeCreate(BaseModel):
     type: str
     format: ResumeFormat = ResumeFormat.LATEX
 
+class ReviewHistoryEntry(BaseModel):
+    version_id: PyObjectId
+    reviewer_name: str
+    reviewer_picture_url: Optional[str] = None
+    status: ResumeStatus
+    remark: Optional[str] = None
+    reviewed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class ResumeInDB(BaseModel):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
     user_id: PyObjectId
     versions: List[ResumeVersion] = []
+    review_history: List[ReviewHistoryEntry] = []
     default_version_id: Optional[PyObjectId] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

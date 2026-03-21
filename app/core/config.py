@@ -49,5 +49,23 @@ class Settings(BaseSettings):
     # Path relative to the app's root (where main.py is run)
     UPLOAD_DIR: str = "public"
     MAX_STORAGE_MB_PER_USER: int = 20
+    
+    # LLM Credits
+    LLM_CREDITS_PER_HOUR: int = 20
+    DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+    
+    # Credit costs per request for different models
+    # Simplified mapping based on the provided list
+    MODEL_CREDIT_COSTS: dict = {
+        "llama-3.1-8b-instant": 1,
+        "llama-3.3-70b-versatile": 2,
+        "meta-llama/llama-4-scout-17b-16e-instruct": 3,
+        "openai/gpt-oss-120b": 5,
+        "openai/gpt-oss-20b": 2,
+        "allam-2-7b": 1,
+        "groq/compound": 4,
+        "groq/compound-mini": 1,
+        "moonshotai/kimi-k2-instruct": 3,
+    }
 
 settings = Settings()

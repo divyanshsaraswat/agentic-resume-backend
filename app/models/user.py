@@ -45,6 +45,7 @@ class UserRole(str, Enum):
 class UserBase(BaseModel):
     name: str
     email: EmailStr
+    picture: Optional[str] = None
     role: UserRole = UserRole.STUDENT
     is_superadmin: bool = False
     is_active: bool = True
@@ -52,6 +53,8 @@ class UserBase(BaseModel):
     year: Optional[int] = None
     storage_limit_mb: int = 20
     storage_used_bytes: int = 0
+    llm_credits: int = 20
+    preferred_model: Optional[str] = None
 
 class UserCreate(UserBase):
     pass
@@ -64,10 +67,13 @@ class UserUpdate(BaseModel):
     department: Optional[str] = None
     year: Optional[int] = None
     assigned_students: Optional[List[PyObjectId]] = None
+    preferred_model: Optional[str] = None
 
 class UserInDB(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
     assigned_students: List[PyObjectId] = []
+    notifications: List[dict] = []
+    last_credit_refill: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

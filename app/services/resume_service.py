@@ -7,6 +7,8 @@ from app.db.mongodb import get_database
 from app.models.resume import ResumeInDB, ResumeVersion, ResumeCreate, ResumeStatus
 from app.models.user import PyObjectId, UserRole
 from app.services.file_service import FileService
+from app.services.notification_service import NotificationService
+from app.models.notification import NotificationType
 
 class ResumeService:
     @staticmethod
@@ -150,22 +152,81 @@ class ResumeService:
     async def update_version_status(
         resume_id: str, 
         version_id: str, 
-        status: ResumeStatus
+        status: ResumeStatus,
+        **kwargs
     ) -> bool:
         db = get_database()
+        
+        set_updates = {
+            "versions.$.status": status,
+            "versions.$.updated_at": datetime.now(timezone.utc)
+        }
+        
+        # Create history entry
+        history_entry = {
+            "version_id": ObjectId(version_id),
+            "status": status,
+            "reviewed_at": datetime.now(timezone.utc)
+        }
+
+        if "reviewer_remark" in kwargs:
+            set_updates["versions.$.reviewer_remark"] = kwargs["reviewer_remark"]
+            history_entry["remark"] = kwargs["reviewer_remark"]
+        if "reviewer_name" in kwargs:
+            set_updates["versions.$.reviewer_name"] = kwargs["reviewer_name"]
+            history_entry["reviewer_name"] = kwargs["reviewer_name"]
+        if "reviewer_picture_url" in kwargs:
+            set_updates["versions.$.reviewer_picture_url"] = kwargs["reviewer_picture_url"]
+            history_entry["reviewer_picture_url"] = kwargs["reviewer_picture_url"]
+        if "reviewed_at" in kwargs:
+            set_updates["versions.$.reviewed_at"] = kwargs["reviewed_at"]
+            history_entry["reviewed_at"] = kwargs["reviewed_at"]
+            
         result = await db.resumes.update_one(
             {
                 "_id": ObjectId(resume_id),
                 "versions.version_id": ObjectId(version_id)
             },
             {
-                "$set": {
-                    "versions.$.status": status,
-                    "versions.$.updated_at": datetime.now(timezone.utc)
+                "$set": set_updates,
+                "$push": {
+                    "review_history": {
+                        "$each": [history_entry],
+                        "$position": 0
+                    }
                 }
             }
         )
-        return result.modified_count > 0
+        
+        if result.modified_count > 0:
+            # Create a notification for the student
+            try:
+                resume = await db.resumes.find_one({"_id": ObjectId(resume_id)})
+                if resume:
+                    user_id = str(resume["user_id"])
+                    v_type = next((v["type"] for v in resume["versions"] if str(v["version_id"]) == version_id), "Resume")
+                    
+                    if status == ResumeStatus.APPROVED:
+                        await NotificationService.create_notification(
+                            user_id=user_id,
+                            title="Resume Approved! 🎉",
+                            description=f"Your {v_type} has been approved by the reviewer.",
+                            n_type=NotificationType.RESUME_APPROVED,
+                            metadata={"resume_id": str(resume_id)}
+                        )
+                    elif status == ResumeStatus.REJECTED:
+                        await NotificationService.create_notification(
+                            user_id=user_id,
+                            title="Feedback on Resume",
+                            description=f"The reviewer has provided feedback on your {v_type}.",
+                            n_type=NotificationType.RESUME_REJECTED,
+                            metadata={"resume_id": str(resume_id)}
+                        )
+            except Exception as e:
+                print(f"FAILED to create notification: {e}")
+                
+            return True
+        return False
 
     @staticmethod
     async def update_latest_version(resume_id: str, updates: dict) -> bool:

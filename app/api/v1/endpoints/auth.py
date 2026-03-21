@@ -35,6 +35,7 @@ async def login_google(request: TokenRequest):
         # ID token is valid. Get the user's Google Account ID from the decoded token.
         email = idinfo['email']
         name = idinfo.get('name', '')
+        picture = idinfo.get('picture', '')
         print(f"DEBUG: Google Auth Success for {email}")
 
         # MNIT check
@@ -53,6 +54,7 @@ async def login_google(request: TokenRequest):
             new_user = UserInDB(
                 name=name,
                 email=email,
+                picture=picture,
                 role=UserRole.STUDENT, # Default role
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -62,6 +64,15 @@ async def login_google(request: TokenRequest):
         else:
             user_id = str(user["_id"])
             user_role = user.get("role", "student")
+            # Update user's name and picture on login
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {
+                    "name": name,
+                    "picture": picture,
+                    "updated_at": datetime.utcnow()
+                }}
+            )
 
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = security.create_access_token(
@@ -92,4 +103,9 @@ async def login_google(request: TokenRequest):
 
 @router.get("/me", response_model=UserInDB)
 async def read_users_me(current_user: UserInDB = Depends(deps.get_current_user)):
+    from app.services.credit_service import CreditService
+    user_doc = await CreditService.get_user_with_refilled_credits(str(current_user.id))
+    if user_doc:
+        return UserInDB(**user_doc)
     return current_user
+

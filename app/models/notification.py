@@ -9,6 +9,7 @@ class NotificationType(str, Enum):
     NEW_FEEDBACK = "new_feedback"
     SYSTEM_ALERT = "system_alert"
     AI_ANALYSIS_COMPLETE = "ai_analysis_complete"
+    RESUME_SUBMITTED = "resume_submitted"
 
 class Notification(BaseModel):
     id: Optional[str] = Field(None, alias="_id")
@@ -17,6 +18,7 @@ class Notification(BaseModel):
     description: str
     type: NotificationType
     is_read: bool = False
+    metadata: Optional[dict] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:

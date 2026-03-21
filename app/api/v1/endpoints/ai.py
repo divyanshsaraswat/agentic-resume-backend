@@ -8,6 +8,9 @@ from app.services.ai_service import AIService
 from app.services.audit_service import AuditService
 from app.models.audit_log import AuditActionType, AuditLogType
 
+from app.services.credit_service import CreditService
+from app.core.config import settings
+
 router = APIRouter()
 
 class ImproveBulletRequest(BaseModel):
@@ -37,6 +40,10 @@ async def improve_bullet(
     Improve a resume bullet point using AI.
     """
     try:
+        model = current_user.preferred_model or settings.DEFAULT_MODEL
+        if not await CreditService.consume_credits(str(current_user.id), model):
+            raise HTTPException(status_code=402, detail="Insufficient LLM credits for this hour. Please wait for the next refill.")
+            
         refined_text = await AIService.improve_bullet(request.bullet)
         await AuditService.log_action(
             actor_id=str(current_user.id),
@@ -59,6 +66,10 @@ async def generate_section(
     Generate a LaTeX-formatted resume section using AI.
     """
     try:
+        model = current_user.preferred_model or settings.DEFAULT_MODEL
+        if not await CreditService.consume_credits(str(current_user.id), model):
+            raise HTTPException(status_code=402, detail="Insufficient LLM credits for this hour. Please wait for the next refill.")
+
         latex_code = await AIService.generate_section(request.section_name, request.user_context)
         await AuditService.log_action(
             actor_id=str(current_user.id),
@@ -81,6 +92,10 @@ async def score_resume(
     Score a resume and get feedback using AI.
     """
     try:
+        model = current_user.preferred_model or settings.DEFAULT_MODEL
+        if not await CreditService.consume_credits(str(current_user.id), model):
+            raise HTTPException(status_code=402, detail="Insufficient LLM credits for this hour. Please wait for the next refill.")
+
         scoring_result = await AIService.score_resume(request.resume_text)
         await AuditService.log_action(
             actor_id=str(current_user.id),
@@ -103,6 +118,10 @@ async def stream_chat(
     """
     Stream AI chat responses.
     """
+    model = current_user.preferred_model or settings.DEFAULT_MODEL
+    if not await CreditService.consume_credits(str(current_user.id), model):
+        raise HTTPException(status_code=402, detail="Insufficient LLM credits for this hour. Please wait for the next refill.")
+
     async def event_generator():
         try:
             # Convert pydantic models to dicts and map 'ai' to 'assistant'

@@ -84,12 +84,12 @@ class AIService:
         return "You are an expert Institutional Career Services Assistant. Help the student refine their LaTeX resume."
 
     @staticmethod
-    async def _get_completion(prompt: str, response_format: Optional[Dict] = None, system_prompt: Optional[str] = None) -> str:
+    async def _get_completion(prompt: str, response_format: Optional[Dict] = None, system_prompt: Optional[str] = None, model: Optional[str] = None) -> str:
         """
         Internal method to get completion from the chosen provider.
         """
         client = AIService.get_client()
-        model = AIService.get_model()
+        model = model or AIService.get_model()
         
         messages = []
         if system_prompt:
@@ -119,12 +119,12 @@ class AIService:
             raise e
 
     @staticmethod
-    async def stream_chat(messages: List[Dict[str, str]], resume_content: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def stream_chat(messages: List[Dict[str, str]], resume_content: Optional[str] = None, model: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         Streaming chat implementation using the institutional chat system prompt.
         """
         client = AIService.get_client()
-        model = AIService.get_model()
+        model = model or AIService.get_model()
         
         system_prompt = AIService._get_system_prompt("chat")
         
@@ -164,7 +164,7 @@ class AIService:
             yield f"Error: {str(e)}"
 
     @staticmethod
-    async def improve_bullet(bullet: str) -> str:
+    async def improve_bullet(bullet: str, model: Optional[str] = None) -> str:
         prompt = f"""
         Refine the following resume bullet point to be more impactful, ATS-friendly, and metric-oriented.
         Use action verbs and ensure it's professional.
@@ -174,11 +174,11 @@ class AIService:
         Return ONLY the refined text. No preamble or quotes.
         """
         
-        content = await AIService._get_completion(prompt)
+        content = await AIService._get_completion(prompt, model=model)
         return AIService.make_latex_safe(content)
 
     @staticmethod
-    async def generate_section(section_name: str, user_context: str) -> str:
+    async def generate_section(section_name: str, user_context: str, model: Optional[str] = None) -> str:
         prompt = f"""
         Generate a professional LaTeX-formatted section for a resume.
         Section Name: {section_name}
@@ -193,10 +193,10 @@ class AIService:
         Return ONLY the LaTeX code.
         """
         
-        return await AIService._get_completion(prompt)
+        return await AIService._get_completion(prompt, model=model)
 
     @staticmethod
-    async def score_resume(resume_text: str) -> Dict[str, Any]:
+    async def score_resume(resume_text: str, model: Optional[str] = None) -> Dict[str, Any]:
         """Analyzes and scores a resume using the dynamic scoring system prompt."""
         system_prompt = AIService._get_system_prompt("score")
         
@@ -212,7 +212,8 @@ class AIService:
         content = await AIService._get_completion(
             prompt, 
             response_format={"type": "json_object"},
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
+            model=model
         )
         
         try:
