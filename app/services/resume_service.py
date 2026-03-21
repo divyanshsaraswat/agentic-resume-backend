@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional, Union
 from bson import ObjectId
 from datetime import datetime, timezone
@@ -10,6 +11,10 @@ from app.services.file_service import FileService
 class ResumeService:
     @staticmethod
     async def create_resume(user_id: PyObjectId, resume_in: ResumeCreate, file: Optional[UploadFile] = None) -> ResumeInDB:
+        print(f"DEBUG: create_resume called. format={resume_in.format}, type={resume_in.type}, has_file={file is not None}")
+        if file:
+            print(f"DEBUG: file details. filename={file.filename}, content_type={file.content_type}")
+        
         db = get_database()
         
         # 1. Create the resume entry first to get an ID for the directory
@@ -23,8 +28,23 @@ class ResumeService:
 
         # 2. Handle file upload if present
         file_url = resume_in.file_url
+        extracted_text = ""
         if file:
             file_url = await FileService.save_resume_file(str(user_id), resume_id, file)
+            
+            # Extract text for AI context
+            from app.core.config import settings
+            file_path = os.path.join(os.getcwd(), file_url.lstrip('/'))
+            if file.filename.lower().endswith('.pdf'):
+                extracted_text = FileService.extract_text_from_pdf(file_path)
+            elif file.filename.lower().endswith('.docx'):
+                extracted_text = FileService.extract_text_from_docx(file_path)
+            
+            # Safety: Ensure format matches file type
+            if file.filename.lower().endswith('.pdf'):
+                resume_in.format = "pdf"
+            elif file.filename.lower().endswith('.docx'):
+                resume_in.format = "docx"
 
         # 3. Create initial version
         initial_version = ResumeVersion(
@@ -32,16 +52,24 @@ class ResumeService:
             format=resume_in.format,
             file_url=file_url,
             latex_code=resume_in.initial_latex or "",
+            parsed_data={"extracted_text": extracted_text} if extracted_text else {},
             status=ResumeStatus.DRAFT,
             updated_at=datetime.now(timezone.utc)
         )
         
-        # 4. Update the resume with the version
+        # 4. Update the resume with the version and detected format
+        # Ensure format is stored as a string value
+        format_val = resume_in.format.value if hasattr(resume_in.format, 'value') else str(resume_in.format)
+        
+        version_dict = initial_version.model_dump(by_alias=True)
+        version_dict["format"] = format_val  # Force string value
+        
         await db.resumes.update_one(
             {"_id": result.inserted_id},
             {
                 "$set": {
-                    "versions": [initial_version.model_dump(by_alias=True)],
+                    "format": format_val,
+                    "versions": [version_dict],
                     "default_version_id": initial_version.version_id
                 }
             }
@@ -71,15 +99,50 @@ class ResumeService:
         if not resume:
             return None
             
+        # Copy LaTeX content from latest version if not provided
+        if version_data.format == "latex" and not version_data.latex_code:
+            if resume.get("versions"):
+                # Copy from latest version
+                latest = resume["versions"][-1]
+                version_data.latex_code = latest.get("latex_code", "")
+            
         # Handle file upload for new version
+        extracted_text = ""
         if file:
             version_data.file_url = await FileService.save_resume_file(
                 str(resume["user_id"]), resume_id, file
             )
+            # Extract text for AI context
+            from app.core.config import settings
+            file_path = os.path.join(os.getcwd(), version_data.file_url.lstrip('/'))
+            if file.filename.lower().endswith('.pdf'):
+                extracted_text = FileService.extract_text_from_pdf(file_path)
+            elif file.filename.lower().endswith('.docx'):
+                extracted_text = FileService.extract_text_from_docx(file_path)
             
+            # Safety: Ensure format matches file type
+            if file.filename.lower().endswith('.pdf'):
+                version_data.format = "pdf"
+            elif file.filename.lower().endswith('.docx'):
+                version_data.format = "docx"
+            
+            if extracted_text:
+                version_data.parsed_data = {"extracted_text": extracted_text}
+            
+        # Ensure format is stored as a string value
+        version_format_val = version_data.format.value if hasattr(version_data.format, 'value') else str(version_data.format)
+        v_dict = version_data.model_dump(by_alias=True)
+        v_dict["format"] = version_format_val
+        
         await db.resumes.update_one(
             {"_id": ObjectId(resume_id)},
-            {"$push": {"versions": version_data.model_dump(by_alias=True)}}
+            {
+                "$push": {"versions": v_dict},
+                "$set": {
+                    "format": version_format_val,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
         )
         return await ResumeService.get_resume_by_id(resume_id)
 
@@ -230,6 +293,70 @@ class ResumeService:
         return results
 
     @staticmethod
+    async def get_validation_stats() -> dict:
+        db = get_database()
+        
+        # 1. Pending count (Status: SUBMITTED)
+        # We need to check the last version of each resume
+        pending_pipeline = [
+            {"$addFields": {"latest_version": {"$arrayElemAt": ["$versions", -1]}}},
+            {"$match": {"latest_version.status": ResumeStatus.SUBMITTED}},
+            {"$count": "count"}
+        ]
+        pending_res = await db.resumes.aggregate(pending_pipeline).to_list(length=1)
+        pending_count = pending_res[0]["count"] if pending_res else 0
+        
+        # 2. Approved Today (Status: APPROVED, updated_at: today)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        approved_today_pipeline = [
+            {"$unwind": "$versions"},
+            {
+                "$match": {
+                    "versions.status": ResumeStatus.APPROVED,
+                    "versions.updated_at": {"$gte": today_start}
+                }
+            },
+            {"$count": "count"}
+        ]
+        approved_res = await db.resumes.aggregate(approved_today_pipeline).to_list(length=1)
+        approved_count = approved_res[0]["count"] if approved_res else 0
+        
+        # 3. Avg Score (of all Submitted/Approved resumes)
+        avg_score_pipeline = [
+            {"$unwind": "$versions"},
+            {
+                "$match": {
+                    "versions.status": {"$in": [ResumeStatus.SUBMITTED, ResumeStatus.APPROVED]},
+                    "versions.ai_score.total": {"$exists": True, "$ne": None}
+                }
+            },
+            {"$group": {"_id": None, "avg": {"$avg": "$versions.ai_score.total"}}}
+        ]
+        avg_res = await db.resumes.aggregate(avg_score_pipeline).to_list(length=1)
+        avg_score = avg_res[0]["avg"] if avg_res else 0
+        
+        # 4. Flagged (Submitted resumes with score < 40/100)
+        flagged_pipeline = [
+            {"$addFields": {"latest_version": {"$arrayElemAt": ["$versions", -1]}}},
+            {
+                "$match": {
+                    "latest_version.status": ResumeStatus.SUBMITTED,
+                    "latest_version.ai_score.total": {"$lt": 40}
+                }
+            },
+            {"$count": "count"}
+        ]
+        flagged_res = await db.resumes.aggregate(flagged_pipeline).to_list(length=1)
+        flagged_count = flagged_res[0]["count"] if flagged_res else 0
+        
+        return {
+            "pending": pending_count,
+            "approvedToday": approved_count,
+            "avgScore": f"{round(avg_score)}%",
+            "flagged": flagged_count
+        }
+
+    @staticmethod
     async def get_students_list(
         search: Optional[str] = None,
         years: Optional[List[int]] = None,
@@ -370,13 +497,6 @@ class ResumeService:
                     "value": pending_reviews,
                     "icon": "Clock",
                     "description": "Awaiting response"
-                },
-                {
-                    "title": "Placement Goal",
-                    "value": "90%", # Hardcoded for now as it's a target
-                    "icon": "Target",
-                    "description": "Target Readiness",
-                    "trend": {"value": 0, "isUp": True}
                 }
             ],
             "resumeDistribution": resume_distribution,
@@ -506,10 +626,21 @@ class ResumeService:
         # 2. Total Resumes
         total_resumes = await db.resumes.count_documents({})
         
-        # 3. Audit Log Stats
+        # 3. System Health (Check DB connection)
+        try:
+            await db.command("ping")
+            health_status = "Operational"
+            health_desc = "All services connected"
+            health_icon = "Activity"
+        except Exception:
+            health_status = "Degraded"
+            health_desc = "Database connection lost"
+            health_icon = "AlertTriangle"
+
+        # 4. Audit Log Stats
         audit_stats = await AuditService.get_stats()
         
-        # 4. User Growth (Mocked for now as we don't have historical snapshots)
+        # 5. User Growth (Mocked for now as we don't have historical snapshots)
         user_growth = [
             {"label": "Week 1", "current": max(0, total_users - 100), "previous": max(0, total_users - 120)},
             {"label": "Week 2", "current": max(0, total_users - 50), "previous": max(0, total_users - 100)},
@@ -545,9 +676,9 @@ class ResumeService:
                 },
                 {
                     "title": "System Health",
-                    "value": "99.9%",
-                    "icon": "Activity",
-                    "description": "All services operational"
+                    "value": health_status,
+                    "icon": health_icon,
+                    "description": health_desc
                 },
                 {
                     "title": "Recent Actions",
@@ -559,6 +690,30 @@ class ResumeService:
             "roleDistribution": role_distribution,
             "userGrowth": user_growth
         }
+
+    @staticmethod
+    async def delete_resume_version(resume_id: str, version_id: str, user_id: PyObjectId) -> bool:
+        db = get_database()
+        
+        # 1. Find the resume to check version count
+        resume = await db.resumes.find_one({"_id": ObjectId(resume_id), "user_id": user_id})
+        if not resume:
+            return False
+            
+        versions = resume.get("versions", [])
+        
+        # 2. If it's the last version, delete the whole document
+        if len(versions) <= 1:
+            return await ResumeService.delete_resume(resume_id, user_id)
+            
+        # 3. Otherwise, pull the specific version
+        # Note: version_id in DB is stored as ObjectId if it was created via PyObjectId default_factory
+        result = await db.resumes.update_one(
+            {"_id": ObjectId(resume_id), "user_id": user_id},
+            {"$pull": {"versions": {"version_id": ObjectId(version_id)}}}
+        )
+        
+        return result.modified_count > 0
 
     @staticmethod
     async def delete_resume(resume_id: str, user_id: PyObjectId) -> bool:

@@ -1,6 +1,7 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from app.core import security
@@ -14,15 +15,27 @@ from datetime import datetime
 
 router = APIRouter()
 
+class TokenRequest(BaseModel):
+    token: str
+
 @router.post("/login/google")
-async def login_google(token: str):
+async def login_google(request: TokenRequest):
+    token = request.token
+    print(f"DEBUG: login_google called with token length {len(token)}")
+    print(f"DEBUG: Using GOOGLE_CLIENT_ID: '{settings.GOOGLE_CLIENT_ID}'")
     try:
-        # Specify the GOOGLE_CLIENT_ID of the app that accesses the backend:
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(), settings.GOOGLE_CLIENT_ID)
+        # Verify the token with a small clock skew tolerance
+        idinfo = id_token.verify_oauth2_token(
+            token, 
+            requests.Request(), 
+            settings.GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10
+        )
 
         # ID token is valid. Get the user's Google Account ID from the decoded token.
         email = idinfo['email']
         name = idinfo.get('name', '')
+        print(f"DEBUG: Google Auth Success for {email}")
 
         # MNIT check
         if not email.endswith("@mnit.ac.in"):
@@ -68,11 +81,13 @@ async def login_google(token: str):
             "access_token": access_token,
             "token_type": "bearer",
         }
-    except ValueError:
-        # Invalid token
+    except Exception as e:
+        # Invalid token or other error
+        error_msg = str(e)
+        print(f"DEBUG: Google Auth Error: {type(e).__name__}: {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Google token",
+            detail=f"Authentication failed: {error_msg}",
         )
 
 @router.get("/me", response_model=UserInDB)

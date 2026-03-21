@@ -41,12 +41,23 @@ async def lifespan(app: FastAPI):
     yield
     await close_mongo_connection()
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan,
     redirect_slashes=False
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print(f"VALIDATION ERROR: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body)},
+    )
 
 # Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:

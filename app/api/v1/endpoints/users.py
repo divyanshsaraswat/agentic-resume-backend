@@ -99,7 +99,7 @@ async def read_students(
 
 @router.get("/students/analytics", response_model=dict)
 async def get_student_analytics(
-    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN]))
+    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC]))
 ) -> Any:
     """
     Get aggregate student placement analytics. (Admin only)

@@ -40,11 +40,26 @@ async def compile_latex(
         target="PDF Compilation",
     )
     
-    # In a real app, we might want to schedule cleanup in X minutes
-    # background_tasks.add_task(LatexService.cleanup_job, result["job_id"])
+    # Temporary files will be cleaned up by a periodic cron job
+    # to ensure they remain available for the frontend viewer.
     
     # If successful and PDF exists, provide the public URL
     if result.get("pdf_available") and result.get("job_id"):
         result["pdf_url"] = f"/public/temp_latex/{result['job_id']}/resume.pdf"
     
     return result
+
+@router.delete("/{job_id}", response_model=bool)
+async def cleanup_latex_job(
+    job_id: str,
+    current_user: UserInDB = Depends(deps.get_current_user)
+):
+    """
+    Manually clean up a LaTeX compilation job's temporary files.
+    """
+    try:
+        LatexService.cleanup_job(job_id)
+        return True
+    except Exception as e:
+        print(f"Failed to cleanup job {job_id}: {e}")
+        return False

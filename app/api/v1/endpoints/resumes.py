@@ -5,6 +5,9 @@ from app.models.resume import ResumeInDB, ResumeCreate, ResumeVersion, ResumeSta
 from app.models.user import UserInDB, UserRole
 from app.services.resume_service import ResumeService
 from app.services.audit_service import AuditService
+from app.services.notification_service import NotificationService
+from app.services.email_service import EmailService
+from app.models.notification import NotificationType
 from app.models.audit_log import AuditActionType, AuditLogType
 
 router = APIRouter()
@@ -74,6 +77,15 @@ async def get_validation_queue(
         department_group=group
     )
 
+@router.get("/validation-stats", response_model=dict)
+async def get_validation_stats(
+    current_user: UserInDB = Depends(deps.check_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.SPC]))
+) -> Any:
+    """
+    Get statistics for the validation queue (Faculty/Admin/SPC only).
+    """
+    return await ResumeService.get_validation_stats()
+
 @router.get("/{resume_id}", response_model=ResumeInDB)
 async def read_resume(
     resume_id: str,
@@ -138,7 +150,7 @@ async def add_version(
 async def update_status(
     resume_id: str,
     version_id: str,
-    status: ResumeStatus,
+    status: ResumeStatus = Query(...),
     current_user: UserInDB = Depends(deps.check_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.SPC]))
 ) -> Any:
     """
@@ -148,6 +160,7 @@ async def update_status(
     if not success:
         raise HTTPException(status_code=404, detail="Resume version not found")
     
+    # 1. Audit Log
     audit_action = AuditActionType.RESUME_APPROVED if status == ResumeStatus.APPROVED else AuditActionType.RESUME_REJECTED
     await AuditService.log_action(
         actor_id=str(current_user.id),
@@ -157,6 +170,38 @@ async def update_status(
         log_type=AuditLogType.VALIDATION,
         target=f"Resume {resume_id} (version {version_id})",
     )
+
+    # 2. In-App Notification & Email
+    try:
+        resume = await ResumeService.get_resume_by_id(resume_id)
+        if resume:
+            from app.db.mongodb import get_database
+            from app.models.user import UserInDB
+            from bson import ObjectId
+            db = get_database()
+            student_data = await db.users.find_one({"_id": ObjectId(resume.user_id)})
+            if student_data:
+                student = UserInDB(**student_data)
+                n_type = NotificationType.RESUME_APPROVED if status == ResumeStatus.APPROVED else NotificationType.RESUME_REJECTED
+                title = f"Resume {status.capitalize()}"
+                description = f"Your {resume.type} resume has been {status}."
+                
+                await NotificationService.create_notification(
+                    user_id=resume.user_id,
+                    title=title,
+                    description=description,
+                    n_type=n_type
+                )
+                
+                # Send Email
+                await EmailService.send_validation_alert(
+                    student_email=student.email,
+                    student_name=student.name,
+                    status=status.value,
+                    feedback="" # Can be expanded if feedback field is added
+                )
+    except Exception as e:
+        print(f"Failed to send notification/email: {e}")
     
     return success
 
@@ -185,64 +230,27 @@ async def update_resume(
         
     return await ResumeService.update_latest_version(resume_id, updates)
 
-@router.delete("/{resume_id}", response_model=bool)
-async def delete_resume(
+@router.delete("/{resume_id}/versions/{version_id}", response_model=bool)
+async def delete_resume_version(
     resume_id: str,
+    version_id: str,
     current_user: UserInDB = Depends(deps.get_current_user)
 ) -> Any:
     """
-    Delete a resume.
+    Delete a specific version of a resume.
     """
-    success = await ResumeService.delete_resume(resume_id, current_user.id)
+    success = await ResumeService.delete_resume_version(resume_id, version_id, current_user.id)
     if not success:
-        raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
+        raise HTTPException(status_code=404, detail="Resume version not found or not owned by user")
     return success
 
-@router.post("/{resume_id}/submit", response_model=bool)
-async def submit_resume(
-    resume_id: str,
-    current_user: UserInDB = Depends(deps.get_current_user)
-) -> Any:
-    """
-    Submit the latest version of a resume for review.
-    """
-    resume = await ResumeService.get_resume_by_id(resume_id)
-    if not resume or resume.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
-    
-    return await ResumeService.update_latest_version(resume_id, {"status": ResumeStatus.SUBMITTED})
-
-@router.patch("/{resume_id}", response_model=bool)
-async def update_resume(
-    resume_id: str,
-    content_in: dict,
-    current_user: UserInDB = Depends(deps.get_current_user)
-) -> Any:
-    """
-    Update the latest version of a resume.
-    """
-    resume = await ResumeService.get_resume_by_id(resume_id)
-    if not resume:
-        raise HTTPException(status_code=404, detail="Resume not found")
-    
-    if resume.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the owner can update the resume"
-        )
-    
-    updates = content_in.copy()
-    if "content" in updates:
-        updates["latex_code"] = updates.pop("content")
-        
-    return await ResumeService.update_latest_version(resume_id, updates)
 @router.delete("/{resume_id}", response_model=bool)
 async def delete_resume(
     resume_id: str,
     current_user: UserInDB = Depends(deps.get_current_user)
 ) -> Any:
     """
-    Delete a resume.
+    Delete an entire resume and all its versions.
     """
     success = await ResumeService.delete_resume(resume_id, current_user.id)
     if not success:

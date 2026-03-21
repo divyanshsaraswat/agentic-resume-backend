@@ -4,6 +4,8 @@ from fastapi import UploadFile, HTTPException
 from app.core.config import settings
 from app.db.mongodb import get_database
 from bson import ObjectId
+import pdfplumber
+import docx
 
 class FileService:
     @staticmethod
@@ -93,3 +95,34 @@ class FileService:
                     if not os.path.islink(fp):
                         total_size += os.path.getsize(fp)
         return total_size
+
+    @staticmethod
+    def extract_text_from_pdf(file_path: str) -> str:
+        """
+        Extracts plain text from a PDF file using pdfplumber.
+        """
+        text = ""
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+        except Exception as e:
+            print(f"Error extracting PDF: {e}")
+        return text.strip()
+
+    @staticmethod
+    def extract_text_from_docx(file_path: str) -> str:
+        """
+        Extracts plain text from a DOCX file using python-docx.
+        """
+        text = ""
+        try:
+            doc = docx.Document(file_path)
+            for para in doc.paragraphs:
+                if para.text:
+                    text += para.text + "\n"
+        except Exception as e:
+            print(f"Error extracting DOCX: {e}")
+        return text.strip()

@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from typing import List, Optional
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # MongoDB
     MONGO_URI: str = "mongodb://localhost:27017" # Default for local dev
     DATABASE_NAME: str = "placement_erp"
+
+    # Email Settings
+    SMTP_HOST: Optional[str] = "smtp.gmail.com"
+    SMTP_PORT: Optional[int] = 587
+    SMTP_USER: Optional[str] = ""
+    SMTP_PASSWORD: Optional[str] = ""
+    EMAILS_FROM_EMAIL: Optional[str] = "noreply@matrix-erp.com"
+    EMAILS_FROM_NAME: Optional[str] = "Matrix Placement Portal"
 
     # Storage Settings
     # Path relative to the app's root (where main.py is run)
