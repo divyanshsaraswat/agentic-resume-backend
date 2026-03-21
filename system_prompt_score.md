@@ -25,7 +25,7 @@ Evaluate the resume across the following dimensions with a critical eye:
 
 4. **Resume Formatting & Parsability (15%)**: 
    - Ensure a clean, hierarchical layout.
-   - LaTeX structures must be standard; non-standard or broken LaTeX receives a penalty.
+   - Document structures (LaTeX, PDF, or DOCX) must be standard and professionally formatted; non-standard or broken structures receive a penalty.
 
 5. **Technical Skills Presentation (10%)**: 
    - Skill sets must be categorized logically (Languages, Frameworks, Tools).

@@ -30,6 +30,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     resume_content: Optional[str] = None
+    format: Optional[str] = "latex"
 
 @router.post("/improve-bullet")
 async def improve_bullet(
@@ -54,6 +55,8 @@ async def improve_bullet(
             target="Resume Bullet",
         )
         return {"original": request.bullet, "improved": refined_text}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,6 +83,8 @@ async def generate_section(
             target=request.section_name,
         )
         return {"section_name": request.section_name, "latex_code": latex_code}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -107,6 +112,8 @@ async def score_resume(
             metadata={"score": scoring_result.get("score")}
         )
         return scoring_result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -137,9 +144,9 @@ async def stream_chat(
                 action=AuditActionType.AI_CHAT,
                 log_type=AuditLogType.AI,
                 target="AI Assistant",
-                metadata={"message_count": len(request.messages)}
+                metadata={"message_count": len(request.messages), "format": request.format}
             )
-            async for chunk in AIService.stream_chat(messages, request.resume_content):
+            async for chunk in AIService.stream_chat(messages, request.resume_content, format=request.format):
                 yield f"data: {chunk}\n\n"
         except Exception as e:
             yield f"Error: {str(e)}"

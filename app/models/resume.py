@@ -52,6 +52,7 @@ class ResumeInDB(BaseModel):
     versions: List[ResumeVersion] = []
     review_history: List[ReviewHistoryEntry] = []
     default_version_id: Optional[PyObjectId] = None
+    is_default: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(

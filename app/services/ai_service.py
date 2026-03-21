@@ -119,7 +119,7 @@ class AIService:
             raise e
 
     @staticmethod
-    async def stream_chat(messages: List[Dict[str, str]], resume_content: Optional[str] = None, model: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def stream_chat(messages: List[Dict[str, str]], resume_content: Optional[str] = None, model: Optional[str] = None, format: str = "latex") -> AsyncGenerator[str, None]:
         """
         Streaming chat implementation using the institutional chat system prompt.
         """
@@ -129,8 +129,12 @@ class AIService:
         system_prompt = AIService._get_system_prompt("chat")
         
         if resume_content:
-            system_prompt += f"\n\nCURRENT RESUME LATEX CODE:\n```latex\n{resume_content}\n```\n"
-            system_prompt += "Use the above code as context for the user's questions. You can suggest modifications to this code."
+            if format == "latex":
+                system_prompt += f"\n\nCURRENT RESUME LATEX CODE:\n```latex\n{resume_content}\n```\n"
+                system_prompt += "Use the above code as context for the user's questions. You can suggest modifications to this code."
+            else:
+                system_prompt += f"\n\nCURRENT RESUME CONTENT ({format.upper()}): \n{resume_content}\n\n"
+                system_prompt += f"Use the extracted text from the {format.upper()} document above as context for the user's questions."
 
         # Prepend system prompt if not already present
         full_messages = messages

@@ -267,6 +267,29 @@ async def delete_resume(
         raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
     return success
 
+@router.post("/{resume_id}/set-default", response_model=bool)
+async def set_default_resume(
+    resume_id: str,
+    current_user: UserInDB = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Set a specific resume as the default for the user.
+    """
+    success = await ResumeService.set_default_resume(resume_id, current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Resume not found or not owned by user")
+    
+    await AuditService.log_action(
+        actor_id=str(current_user.id),
+        actor_name=current_user.name,
+        actor_role=current_user.role.value,
+        action=AuditActionType.USER_UPDATED,
+        log_type=AuditLogType.RESUME,
+        target=f"Resume {resume_id} set as default",
+    )
+    
+    return success
+
 @router.post("/{resume_id}/submit", response_model=bool)
 async def submit_resume(
     resume_id: str,

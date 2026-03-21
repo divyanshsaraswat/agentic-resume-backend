@@ -55,6 +55,7 @@ class UserBase(BaseModel):
     storage_used_bytes: int = 0
     llm_credits: int = 20
     preferred_model: Optional[str] = None
+    notifications_enabled: bool = True
 
 class UserCreate(UserBase):
     pass
@@ -68,6 +69,7 @@ class UserUpdate(BaseModel):
     year: Optional[int] = None
     assigned_students: Optional[List[PyObjectId]] = None
     preferred_model: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
 
 class UserInDB(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")

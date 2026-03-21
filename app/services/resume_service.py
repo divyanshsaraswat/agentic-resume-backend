@@ -19,10 +19,15 @@ class ResumeService:
         
         db = get_database()
         
-        # 1. Create the resume entry first to get an ID for the directory
+        # 1. Check if this is the first resume for the user to set as default
+        existing_count = await db.resumes.count_documents({"user_id": user_id})
+        is_default = existing_count == 0
+
+        # 2. Create the resume entry first to get an ID for the directory
         resume_dict = {
             "user_id": user_id,
             "versions": [],
+            "is_default": is_default,
             "created_at": datetime.now(timezone.utc)
         }
         result = await db.resumes.insert_one(resume_dict)
@@ -147,6 +152,24 @@ class ResumeService:
             }
         )
         return await ResumeService.get_resume_by_id(resume_id)
+
+    @staticmethod
+    async def set_default_resume(resume_id: str, user_id: PyObjectId) -> bool:
+        db = get_database()
+        
+        # 1. Unset existing default for this user
+        await db.resumes.update_many(
+            {"user_id": user_id, "is_default": True},
+            {"$set": {"is_default": False}}
+        )
+        
+        # 2. Set the new default
+        result = await db.resumes.update_one(
+            {"_id": ObjectId(resume_id), "user_id": user_id},
+            {"$set": {"is_default": True}}
+        )
+        
+        return result.modified_count > 0
 
     @staticmethod
     async def update_version_status(
@@ -450,15 +473,34 @@ class ResumeService:
                     "as": "resumes"
                 }
             },
-            # 3. Get the latest resume version
+            # 3. Get the default resume if it exists, otherwise the first one
             {
                 "$addFields": {
-                    "latest_resume": { "$arrayElemAt": ["$resumes", 0] }
+                    "default_resume": {
+                        "$let": {
+                            "vars": {
+                                "default_matched": {
+                                    "$filter": {
+                                        "input": "$resumes",
+                                        "as": "r",
+                                        "cond": { "$eq": ["$$r.is_default", True] }
+                                    }
+                                }
+                            },
+                            "in": {
+                                "$cond": [
+                                    { "$gt": [{ "$size": "$$default_matched" }, 0] },
+                                    { "$arrayElemAt": ["$$default_matched", 0] },
+                                    { "$arrayElemAt": ["$resumes", 0] }
+                                ]
+                            }
+                        }
+                    }
                 }
             },
             {
                 "$addFields": {
-                    "latest_version": { "$arrayElemAt": ["$latest_resume.versions", -1] }
+                    "latest_version": { "$arrayElemAt": ["$default_resume.versions", -1] }
                 }
             },
             # 4. Limit and Project
@@ -795,4 +837,12 @@ class ResumeService:
             
         # 3. Delete from DB
         result = await db.resumes.delete_one({"_id": ObjectId(resume_id)})
-        return result.deleted_count > 0
+        deleted_success = result.deleted_count > 0
+
+        # 4. If the deleted resume was default, pick another one
+        if deleted_success and resume.get("is_default"):
+            remaining = await db.resumes.find({"user_id": user_id}).sort("created_at", -1).to_list(length=1)
+            if remaining:
+                await db.resumes.update_one({"_id": remaining[0]["_id"]}, {"$set": {"is_default": True}})
+
+        return deleted_success
