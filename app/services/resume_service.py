@@ -9,6 +9,7 @@ from app.models.user import PyObjectId, UserRole
 from app.services.file_service import FileService
 from app.services.notification_service import NotificationService
 from app.models.notification import NotificationType
+from app.core.utils import derive_student_data
 
 class ResumeService:
     @staticmethod
@@ -510,16 +511,32 @@ class ResumeService:
                     "_id": 1,
                     "name": 1,
                     "email": 1,
+                    "picture": 1,
                     "department": 1,
                     "year": 1,
+                    "resume_id": { "$ifNull": ["$default_resume._id", None] },
                     "status": { "$ifNull": ["$latest_version.status", "not_created"] },
-                    "score": { "$ifNull": ["$latest_version.ai_score.overall", 0] },
+                    "score": { "$ifNull": ["$latest_version.ai_score.total", 0] },
                     "updatedAt": { "$ifNull": ["$latest_version.updated_at", "$created_at"] }
                 }
             }
         ]
 
         results = await db.users.aggregate(pipeline).to_list(length=limit)
+        for res in results:
+            res["id"] = str(res["_id"])
+            if res.get("resume_id"):
+                res["resume_id"] = str(res["resume_id"])
+            
+            # Auto-derive data from email if missing
+            derived = derive_student_data(res.get("email", ""))
+            if derived:
+                if not res.get("department") or res.get("department") == "Not Assigned":
+                    res["department"] = derived.get("department", res.get("department"))
+                if not res.get("year"):
+                    res["year"] = derived.get("year", res.get("year"))
+                    
+            del res["_id"]
         return results
 
     @staticmethod

@@ -38,7 +38,6 @@ async def create_user(
     user_data = user_in.model_dump()
     user_data["created_at"] = datetime.now(timezone.utc)
     user_data["updated_at"] = datetime.now(timezone.utc)
-    user_data["assigned_students"] = []
     
     result = await db.users.insert_one(user_data)
     created_user = await db.users.find_one({"_id": result.inserted_id})
@@ -86,7 +85,7 @@ async def read_students(
     search: Optional[str] = None,
     year: Optional[List[int]] = Query(None),
     department: Optional[List[str]] = Query(None),
-    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC]))
+    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC, UserRole.FACULTY]))
 ) -> Any:
     """
     Retrieve students tracking list. (Admin/SPC only)
@@ -99,7 +98,7 @@ async def read_students(
 
 @router.get("/students/analytics", response_model=dict)
 async def get_student_analytics(
-    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC]))
+    current_user: UserInDB = Depends(deps.check_role([UserRole.ADMIN, UserRole.SPC, UserRole.FACULTY]))
 ) -> Any:
     """
     Get aggregate student placement analytics. (Admin only)

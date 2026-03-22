@@ -4,6 +4,8 @@ from typing import Optional, List, Any
 from datetime import datetime, timezone
 from enum import Enum
 from bson import ObjectId
+from pydantic import model_validator
+from app.core.utils import derive_student_data
 
 class PyObjectId(ObjectId):
     @classmethod
@@ -67,17 +69,26 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     department: Optional[str] = None
     year: Optional[int] = None
-    assigned_students: Optional[List[PyObjectId]] = None
     preferred_model: Optional[str] = None
     notifications_enabled: Optional[bool] = None
 
 class UserInDB(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    assigned_students: List[PyObjectId] = []
     notifications: List[dict] = []
     last_credit_refill: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode='after')
+    def apply_student_derivation(self) -> 'UserInDB':
+        if self.role == UserRole.STUDENT:
+            derived = derive_student_data(self.email)
+            if derived:
+                if not self.department or self.department == "Not Assigned":
+                    self.department = derived.get("department") or self.department
+                if not self.year:
+                    self.year = derived.get("year") or self.year
+        return self
 
     model_config = ConfigDict(
         populate_by_name=True,

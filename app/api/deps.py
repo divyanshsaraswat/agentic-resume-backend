@@ -48,6 +48,7 @@ async def get_current_user(
     user = await db.users.find_one({"_id": ObjectId(token_data)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+            
     return UserInDB(**user)
 
 def check_role(roles: List[UserRole]):
