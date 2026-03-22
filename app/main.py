@@ -71,6 +71,21 @@ if settings.BACKEND_CORS_ORIGINS:
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# WebSocket endpoint for live LaTeX compilation updates
+from fastapi import WebSocket as _WS, WebSocketDisconnect as _WSD
+from app.services.latex_service import ws_manager
+
+@app.websocket("/ws/latex/{job_id}")
+async def latex_ws(websocket: _WS, job_id: str):
+    await ws_manager.connect(websocket, job_id)
+    try:
+        while True:
+            await websocket.receive_text()  # keep alive
+    except _WSD:
+        ws_manager.disconnect(job_id)
+    except Exception:
+        ws_manager.disconnect(job_id)
+
 # Mount static files
 app.mount("/public", StaticFiles(directory=settings.UPLOAD_DIR), name="public")
 
