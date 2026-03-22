@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         case_sensitive=True
     )
     
-    PROJECT_NAME: str = "Placement ERP API"
+    PROJECT_NAME: str = "Placement Management System API"
     API_V1_STR: str = "/api/v1"
     
     # CORS
