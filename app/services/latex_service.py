@@ -4,6 +4,7 @@ import os
 import uuid
 import shutil
 import time
+import httpx
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 from app.core.config import settings
@@ -98,8 +99,11 @@ async def _latex_worker(worker_id: int):
         # Update positions for remaining queued jobs
         await ws_manager.broadcast_queue_positions()
 
-        # Run compilation
-        result = await LatexService._run_compilation(job_id, latex_code)
+        # Run compilation — route based on TEX_COMPILE env var
+        if settings.TEX_COMPILE.lower() == "api" and settings.TEX_API:
+            result = await LatexService._run_api_compilation(job_id, latex_code)
+        else:
+            result = await LatexService._run_compilation(job_id, latex_code)
 
         # Store result and signal completion
         _job_store[job_id]["result"] = result
@@ -262,6 +266,92 @@ class LatexService:
                 response["pdf_url"] = f"/public/temp_latex/{job_id}/resume.pdf"
 
         return response
+
+    # ------------------------------------------------------------------
+    # API-based compilation (texapi.ovh)
+    # ------------------------------------------------------------------
+    @staticmethod
+    async def _run_api_compilation(job_id: str, latex_code: str) -> Dict[str, Any]:
+        """Compiles LaTeX via the texapi.ovh REST API.
+        
+        The API returns raw PDF bytes (Content-Type: application/pdf) on success,
+        or a JSON error body on failure.
+        """
+        try:
+            work_dir = os.path.join(settings.UPLOAD_DIR, "temp_latex", job_id)
+            os.makedirs(work_dir, exist_ok=True)
+            pdf_file = os.path.join(work_dir, "resume.pdf")
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    "https://texapi.ovh/api/latex/compile",
+                    headers={
+                        "X-API-KEY": settings.TEX_API,
+                        "Content-Type": "application/json",
+                    },
+                    json={"content": latex_code},
+                )
+
+                content_type = resp.headers.get("content-type", "")
+
+                # Success: API returns raw PDF bytes
+                if "application/pdf" in content_type and resp.status_code == 200:
+                    with open(pdf_file, "wb") as f:
+                        f.write(resp.content)
+
+                    logger.info(f"API compilation successful for job {job_id} ({len(resp.content)} bytes)")
+                    return {
+                        "success": True,
+                        "job_id": job_id,
+                        "error": "",
+                        "log": "Compiled via texapi.ovh",
+                        "pdf_available": True,
+                    }
+
+                # Error: API returns JSON with error details
+                resp.raise_for_status()
+                data = resp.json()
+                errors = data.get("errors", [])
+                error_msg = "\n".join(errors) if errors else "API compilation failed"
+                return {
+                    "success": False,
+                    "job_id": job_id,
+                    "error": error_msg,
+                    "log": error_msg,
+                    "pdf_available": False,
+                }
+
+        except httpx.HTTPStatusError as e:
+            error_msg = f"API returned HTTP {e.response.status_code}"
+            try:
+                body = e.response.json()
+                if body.get("errors"):
+                    error_msg = "\n".join(body["errors"])
+                elif body.get("detail"):
+                    # FastAPI-style validation error
+                    error_msg = str(body["detail"])
+            except Exception:
+                # Response might not be JSON
+                raw = e.response.text[:500]
+                if raw:
+                    error_msg = f"{error_msg}: {raw}"
+            logger.error(f"texapi.ovh HTTP error for job {job_id}: {error_msg}")
+            return {
+                "success": False,
+                "job_id": job_id,
+                "error": error_msg,
+                "log": error_msg,
+                "pdf_available": False,
+            }
+        except Exception as e:
+            logger.error(f"texapi.ovh error for job {job_id}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "job_id": job_id,
+                "error": str(e),
+                "log": "",
+                "pdf_available": False,
+            }
 
     # ------------------------------------------------------------------
     # Internal compilation (unchanged logic)

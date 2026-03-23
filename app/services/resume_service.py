@@ -542,6 +542,27 @@ class ResumeService:
     @staticmethod
     async def get_student_dashboard_stats(user_id: PyObjectId) -> dict:
         db = get_database()
+        
+        # 1. Auto-update student metadata from email (Department & Year)
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        if user and user.get("role") == UserRole.STUDENT:
+            derived = derive_student_data(user.get("email", ""))
+            if derived:
+                # Check if we need to update
+                needs_update = False
+                for key, value in derived.items():
+                    if user.get(key) != value:
+                        needs_update = True
+                        break
+                
+                if needs_update:
+                    await db.users.update_one(
+                        {"_id": ObjectId(user_id)},
+                        {"$set": {**derived, "updated_at": datetime.now(timezone.utc)}}
+                    )
+                    # Refresh user object for stats calculation if needed
+                    # (Though currently stats only use resumes, not user fields)
+        
         resumes = await db.resumes.find({"user_id": user_id}).to_list(length=100)
         
         active_resumes = len(resumes)

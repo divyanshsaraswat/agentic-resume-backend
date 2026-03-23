@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Path relative to the app's root (where main.py is run)
     UPLOAD_DIR: str = "public"
     MAX_STORAGE_MB_PER_USER: int = 20
+
+    # LaTeX Compilation
+    TEX_COMPILE: str = "system"  # "api" or "system"
+    TEX_API: str = ""  # texapi.ovh API key
     
     # LLM Credits
     LLM_CREDITS_PER_HOUR: int = 20
