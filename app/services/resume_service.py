@@ -338,8 +338,9 @@ class ResumeService:
 
         # Apply specific department filter (Multi-select)
         if departments:
+            dept_regex = "|".join([d.replace("&", "\\s*(&|and)\\s*").replace(" and ", "\\s*(&|and)\\s*") for d in departments])
             pipeline.append({
-                "$match": {"student.department": {"$in": departments}}
+                "$match": {"student.department": {"$regex": f"^({dept_regex})$", "$options": "i"}}
             })
 
         # Apply department group filter (Engineering)
@@ -367,7 +368,8 @@ class ResumeService:
                 "type": "$latest_version.type",
                 "score": "$latest_version.ai_score.total",
                 "status": "$latest_version.status",
-                "updatedAt": "$latest_version.updated_at"
+                "updatedAt": "$latest_version.updated_at",
+                "versionId": "$latest_version.version_id"
             }
         })
 
@@ -375,6 +377,8 @@ class ResumeService:
         # Convert IDs to strings
         for res in results:
             res["id"] = str(res["_id"])
+            if res.get("versionId"):
+                res["versionId"] = str(res["versionId"])
             del res["_id"]
         return results
 
@@ -456,7 +460,17 @@ class ResumeService:
         if years:
             match_query["year"] = {"$in": years}
         if departments:
-            match_query["department"] = {"$in": departments}
+            # Use regex for each department to be more resilient (e.g. "and" vs "&")
+            match_query["department"] = {
+                "$in": [ { "$regex": f"^{d.replace('&', '.*').replace('and', '.*')}$", "$options": "i" } for d in departments ]
+            }
+            # Actually simpler: just direct regex if we want to be safe, but $in with regex is fine in Mongo 4.2+
+            # However, for maximum compatibility and simplicity with the current "and" vs "&" fix:
+            match_query["department"] = {"$in": departments} 
+            # Wait, if I just fixed the frontend to match, then strict $in is fine.
+            # But the user might have mixed data. Let's use a more flexible match.
+            dept_regex = "|".join([d.replace("&", "\\s*(&|and)\\s*").replace(" and ", "\\s*(&|and)\\s*") for d in departments])
+            match_query["department"] = {"$regex": f"^({dept_regex})$", "$options": "i"}
         if search:
             match_query["$or"] = [
                 {"name": {"$regex": search, "$options": "i"}},
