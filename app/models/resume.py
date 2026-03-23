@@ -27,6 +27,7 @@ class ResumeVersion(BaseModel):
     status: ResumeStatus = ResumeStatus.DRAFT
     reviewer_remark: Optional[str] = None
     reviewer_name: Optional[str] = None
+    reviewer_role: Optional[str] = None
     reviewer_picture_url: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
@@ -41,6 +42,7 @@ class ResumeCreate(BaseModel):
 class ReviewHistoryEntry(BaseModel):
     version_id: PyObjectId
     reviewer_name: str
+    reviewer_role: Optional[str] = None
     reviewer_picture_url: Optional[str] = None
     status: ResumeStatus
     remark: Optional[str] = None

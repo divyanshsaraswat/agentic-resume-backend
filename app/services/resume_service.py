@@ -200,6 +200,9 @@ class ResumeService:
         if "reviewer_name" in kwargs:
             set_updates["versions.$.reviewer_name"] = kwargs["reviewer_name"]
             history_entry["reviewer_name"] = kwargs["reviewer_name"]
+        if "reviewer_role" in kwargs:
+            set_updates["versions.$.reviewer_role"] = kwargs["reviewer_role"]
+            history_entry["reviewer_role"] = kwargs["reviewer_role"]
         if "reviewer_picture_url" in kwargs:
             set_updates["versions.$.reviewer_picture_url"] = kwargs["reviewer_picture_url"]
             history_entry["reviewer_picture_url"] = kwargs["reviewer_picture_url"]

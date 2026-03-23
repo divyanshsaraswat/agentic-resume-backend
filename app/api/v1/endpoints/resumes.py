@@ -160,6 +160,7 @@ async def update_status(
     """
     kwargs = {
         "reviewer_name": current_user.name,
+        "reviewer_role": current_user.role.value,
         "reviewer_picture_url": current_user.picture,
         "reviewed_at": datetime.now(timezone.utc)
     }
