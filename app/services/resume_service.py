@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import List, Optional, Union
 from bson import ObjectId
 from datetime import datetime, timezone
@@ -544,24 +545,23 @@ class ResumeService:
         db = get_database()
         
         # 1. Auto-update student metadata from email (Department & Year)
-        user = await db.users.find_one({"_id": ObjectId(user_id)})
-        if user and user.get("role") == UserRole.STUDENT:
-            derived = derive_student_data(user.get("email", ""))
-            if derived:
-                # Check if we need to update
-                needs_update = False
-                for key, value in derived.items():
-                    if user.get(key) != value:
-                        needs_update = True
-                        break
-                
-                if needs_update:
-                    await db.users.update_one(
-                        {"_id": ObjectId(user_id)},
-                        {"$set": {**derived, "updated_at": datetime.now(timezone.utc)}}
-                    )
-                    # Refresh user object for stats calculation if needed
-                    # (Though currently stats only use resumes, not user fields)
+        #    Fire-and-forget: don't block the stats response
+        async def _sync_student_data():
+            try:
+                user = await db.users.find_one({"_id": ObjectId(user_id)})
+                if user and user.get("role") == UserRole.STUDENT:
+                    derived = derive_student_data(user.get("email", ""))
+                    if derived:
+                        needs_update = any(user.get(k) != v for k, v in derived.items())
+                        if needs_update:
+                            await db.users.update_one(
+                                {"_id": ObjectId(user_id)},
+                                {"$set": {**derived, "updated_at": datetime.now(timezone.utc)}}
+                            )
+            except Exception as e:
+                print(f"Background student sync error: {e}")
+
+        asyncio.create_task(_sync_student_data())
         
         resumes = await db.resumes.find({"user_id": user_id}).to_list(length=100)
         
