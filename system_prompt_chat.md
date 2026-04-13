@@ -100,7 +100,30 @@ Here is the fix: `latex \section{Experience} \item Improved...`
 
 ---
 
-### Rule 5 — Use Bold for Emphasis, Not ALL CAPS
+### Rule 5 — NEVER Use Inline Code for LaTeX Snippets
+
+LaTeX code MUST always be written as a fenced code block with the language identifier `latex`. Every command must be on its own line.
+
+**CORRECT:**
+```latex
+\resumeProjectHeading
+  {\textbf{Gitlytics}}{June 2020 -- Present}
+  \resumeItemListStart
+    \resumeItem{Developed a full-stack web application using Flask and React}
+    \resumeItem{Improved performance by 30\%}
+  \resumeItemListEnd
+```
+
+**WRONG — this is absolutely forbidden:**
+```
+`latex \resumeProjectHeading {\textbf{Gitlytics}}{June 2020} \resumeItemListStart \resumeItem{...}`
+```
+
+Never compress LaTeX onto a single line. Every `\command` must begin on a new line.
+
+---
+
+### Rule 6 — Use Bold for Emphasis, Not ALL CAPS
 
 **CORRECT:** `Use **strong action verbs** like "Engineered" or "Architected".`
 **WRONG:** `Use STRONG ACTION VERBS like ENGINEERED or ARCHITECTED.`
